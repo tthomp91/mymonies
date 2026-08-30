@@ -682,15 +682,15 @@
 <script>
 /* ---------- Config ---------- */
 const DEFAULT_EXPENSE_CATEGORIES = [
-  "Tithe","Em Fu","Home","Groceries \\ Home Ess","Electric","Water","Natural Gas",
-  "Auto Gas","Auto Insurance","Health Insurance","Internet","Mobile Phone","Life Insurance",
-  "Medical","Misc","Dog Food","Christmas","Subscriptions","Car Maintenance","Trash",
-  "Amelia Party","Counseling","Eating Out","Clothes","Gifts","Cheer",
-  "Pocket Money (Taylor)","Pocket Money (Kara)","Football Money"
+  "Housing","Groceries","Electric","Water","Natural Gas","Internet","Mobile Phone",
+  "Auto Gas","Auto Insurance","Health Insurance","Life Insurance","Car Maintenance",
+  "Medical","Dining Out","Entertainment","Subscriptions","Clothing","Personal Care",
+  "Pets","Childcare","Education","Travel","Gifts & Donations","Debt Payments",
+  "Savings & Investments","Miscellaneous"
 ];
 
 const DEFAULT_INCOME_CATEGORIES = [
-  "Taylor Pay","Kara Pay","EF","Interest","Gift/Card","Bonus","Cheer"
+  "Paycheck","Side Income","Interest","Investment Income","Gifts","Bonus","Other Income"
 ];
 
 // Category lists are editable at runtime — persisted so add/remove sticks between sessions
@@ -769,8 +769,8 @@ function setCategoryLimit(name){
 // Keyword rules for auto-matching bank descriptions to your categories.
 // Anything that doesn't match falls back to "Uncategorized" so you can assign it by hand.
 const DEFAULT_RULES = {
-  "Tithe": ["church","tithe","offering"],
-  "Groceries \\ Home Ess": ["kroger","publix","walmart","costco","target","aldi","whole foods","trader joe","food lion","sprouts"],
+  "Housing": ["rent","mortgage","landlord","property mgmt","hoa"],
+  "Groceries": ["kroger","publix","walmart","costco","target","aldi","whole foods","trader joe","food lion","sprouts"],
   "Electric": ["electric","power company","georgia power","duke energy"],
   "Water": ["water dept","water utility","water bill","water works"],
   "Natural Gas": ["natural gas","gas company","atlanta gas","scana"],
@@ -781,12 +781,12 @@ const DEFAULT_RULES = {
   "Mobile Phone": ["verizon","t-mobile","at&t wireless","cellular","mobile phone"],
   "Life Insurance": ["life insurance","primerica","northwestern mutual"],
   "Medical": ["pharmacy","cvs","walgreens","doctor","dental","clinic","hospital","urgent care"],
-  "Dog Food": ["petco","petsmart","chewy","pet supplies"],
+  "Pets": ["petco","petsmart","chewy","pet supplies"],
   "Subscriptions": ["netflix","spotify","hulu","disney+","apple.com/bill","subscription","adobe","icloud","youtube premium","hbo"],
   "Car Maintenance": ["auto repair","jiffy lube","tire","oil change","mechanic","car wash"],
-  "Trash": ["waste management","trash service","sanitation"],
-  "Eating Out": ["starbucks","chipotle","mcdonald","restaurant","cafe","coffee","doordash","grubhub","ubereats","uber eats","pizza","taco"],
-  "Clothes": ["old navy","gap","kohls","tj maxx","nordstrom","macy"],
+  "Dining Out": ["starbucks","chipotle","mcdonald","restaurant","cafe","coffee","doordash","grubhub","ubereats","uber eats","pizza","taco"],
+  "Clothing": ["old navy","gap","kohls","tj maxx","nordstrom","macy"],
+  "Debt Payments": ["loan payment","credit card payment","student loan","auto loan"],
   "Interest": ["interest paid","interest earned"],
   "Bonus": ["bonus"]
 };
