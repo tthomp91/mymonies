@@ -168,6 +168,7 @@
     display:flex;
     align-items:center;
     border-bottom:1px solid var(--paper-line);
+    flex-wrap:wrap;
   }
   .month-tabs-row{
     padding:14px 0 14px 28px;
@@ -175,10 +176,24 @@
     gap:6px;
     overflow-x:auto;
     flex:1;
+    min-width:0; /* lets the row actually shrink and scroll instead of overflowing onto siblings */
   }
   .month-tabs-outer > .clear-btn{
     margin-right:28px;
     flex-shrink:0;
+  }
+  @media (max-width: 560px){
+    .month-tabs-outer{
+      flex-direction:column;
+      align-items:stretch;
+    }
+    .month-tabs-row{
+      padding:14px 28px 10px;
+    }
+    .month-tabs-outer > .clear-btn{
+      margin:0 28px 14px;
+      align-self:flex-start;
+    }
   }
   .month-tab-btn{
     font-family:'Inter',sans-serif;
