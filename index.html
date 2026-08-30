@@ -1031,14 +1031,16 @@ function renderCategoryPieChart(){
     const frac = amt / total;
     const len = frac * circumference;
     const color = PIE_PALETTE[i % PIE_PALETTE.length];
-    slices += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="${strokeW}" stroke-dasharray="${len.toFixed(2)} ${(circumference-len).toFixed(2)}" stroke-dashoffset="${(-cumulative).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})"><title>${escapeHtml(cat)}: ${fmtMoney(amt)}</title></circle>`;
+    const dimmed = categoryFilter && categoryFilter !== cat;
+    slices += `<circle class="pie-slice" data-cat="${escapeHtml(cat)}" cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="${strokeW}" stroke-dasharray="${len.toFixed(2)} ${(circumference-len).toFixed(2)}" stroke-dashoffset="${(-cumulative).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})" style="cursor:pointer;opacity:${dimmed ? 0.35 : 1};transition:opacity .12s;"><title>${escapeHtml(cat)}: ${fmtMoney(amt)} — click to filter</title></circle>`;
     cumulative += len;
   });
 
   const legend = entries.map(([cat, amt], i) => {
     const pct = ((amt / total) * 100).toFixed(1);
     const color = PIE_PALETTE[i % PIE_PALETTE.length];
-    return `<div class="pie-legend-item">
+    const selected = categoryFilter === cat;
+    return `<div class="pie-legend-item" data-cat="${escapeHtml(cat)}" style="cursor:pointer;${selected ? 'font-weight:600;' : ''}">
       <span class="pie-legend-swatch" style="background:${color};"></span>
       <span class="pie-legend-name" title="${escapeHtml(cat)}">${escapeHtml(cat)}</span>
       <span class="pie-legend-pct">${pct}%</span>
@@ -1051,6 +1053,10 @@ function renderCategoryPieChart(){
       <div style="flex:1;min-width:150px;max-height:160px;overflow-y:auto;">${legend}</div>
     </div>
   `;
+
+  host.querySelectorAll('[data-cat]').forEach(el => {
+    el.addEventListener('click', () => toggleCategoryFilter(el.dataset.cat));
+  });
 }
 function renderMonthTabs(){
   const container = document.getElementById('monthTabs');
