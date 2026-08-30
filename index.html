@@ -570,7 +570,7 @@
         <button class="clear-btn" id="saveBudgetBtn" title="Download everything (transactions, categories, limits) as a file you can reopen later">Save budget file</button>
         <button class="clear-btn" id="loadBudgetBtn" title="Reload a budget file you saved earlier">Load budget file</button>
         <button class="clear-btn" id="tidyBtn" title="Strip bank codes and reference numbers from existing transaction descriptions">Tidy descriptions</button>
-        <button class="clear-btn" id="clearBtn">Clear all data</button>
+        <button class="clear-btn" id="clearBtn" title="Deletes all transactions. Categories and learned rules stay.">Clear transactions</button>
       </div>
     </div>
 
@@ -1534,12 +1534,12 @@ document.getElementById('budgetFileInput').addEventListener('change', (e) => {
 });
 
 document.getElementById('clearBtn').addEventListener('click', () => {
-  if (confirm('This will delete all stored transactions and learned categories. Continue?')){
+  if (confirm('This will delete all stored transactions. Your categories and learned auto-categorization rules will stay. Continue?')){
     transactions = [];
-    learnedRules = {};
     categoryFilter = null;
     saveState();
     render();
+    showToast('Transactions cleared');
   }
 });
 
