@@ -1043,24 +1043,90 @@ function txSignature(date, desc, amount){
   return `${date}|${Math.round(amount * 100)}|${(desc || '').toLowerCase().replace(/\s+/g, ' ').trim()}`;
 }
 
+// Recognizes common date formats by content, used when a column's header name doesn't give it away
+function looksLikeDate(s){
+  s = (s || '').trim();
+  if (!s) return false;
+  if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(s)) return true;          // 8/29/2026
+  if (/^\d{4}-\d{1,2}-\d{1,2}/.test(s)) return true;                // 2026-08-29
+  if (/^\d{1,2}-\d{1,2}-\d{2,4}$/.test(s)) return true;             // 29-08-2026
+  if (/^[A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}$/.test(s)) return true; // Aug 29, 2026
+  if (/^\d{1,2}\s+[A-Za-z]{3,9}\.?\s+\d{2,4}$/.test(s)) return true; // 29 Aug 2026
+  return false;
+}
+// Recognizes plain currency-style numbers by content (handles $, commas, parens for negatives)
+function looksLikeAmount(s){
+  s = (s || '').trim();
+  if (!s) return false;
+  return /^\(?-?\$?[\d,]+\.\d{2}\)?$/.test(s) || /^\(?-?\$?[\d,]+\)?$/.test(s);
+}
+// Scores each column against a predicate across a sample of data rows, returns the best match (or -1)
+function sniffColumn(dataRows, predicate, excludeIdxs){
+  const sample = dataRows.slice(0, Math.min(dataRows.length, 10));
+  if (sample.length === 0) return -1;
+  const colCount = sample[0].length;
+  let bestIdx = -1, bestHits = 0;
+  for (let c = 0; c < colCount; c++){
+    if (excludeIdxs.includes(c)) continue;
+    let hits = 0;
+    sample.forEach(row => { if (predicate(row[c])) hits++; });
+    if (hits > bestHits && hits >= Math.ceil(sample.length * 0.7)){
+      bestHits = hits;
+      bestIdx = c;
+    }
+  }
+  return bestIdx;
+}
+
 function handleFiles(files){
   Array.from(files).forEach(file => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const rows = parseCSV(e.target.result);
       if (rows.length < 2) return;
-      const headers = rows[0];
-      const dateIdx = findCol(headers, [/^date$/, /trans.*date/, /post.*date/, /^posted$/, /^date posted$/, /date/]);
-      const descIdx = findCol(headers, [/desc/, /narrative/, /memo/, /payee/, /merchant/, /name/]);
-      const amountIdx = findCol(headers, [/^amount$/, /amt/, /^amount \(\$\)$/, /transaction amount/]);
-      const debitIdx = findCol(headers, [/debit/, /withdrawal/, /money out/, /payment/]);
-      const creditIdx = findCol(headers, [/credit/, /deposit/, /money in/]);
+
+      // Some banks (Wells Fargo, for one) export with no header row at all —
+      // if row 0 looks like data rather than labels, treat every row as data.
+      const firstRowLooksLikeData = rows[0].some(cell => looksLikeDate(cell) || looksLikeAmount(cell));
+      const headers = firstRowLooksLikeData ? [] : rows[0];
+      const dataRows = firstRowLooksLikeData ? rows : rows.slice(1);
+
+      let dateIdx = findCol(headers, [/^date$/, /trans.*date/, /post.*date/, /^posted$/, /^date posted$/, /date/]);
+      let descIdx = findCol(headers, [/desc/, /narrative/, /memo/, /payee/, /merchant/, /name/]);
+      let amountIdx = findCol(headers, [/^amount$/, /amt/, /^amount \(\$\)$/, /transaction amount/]);
+      let debitIdx = findCol(headers, [/debit/, /withdrawal/, /money out/, /payment/]);
+      let creditIdx = findCol(headers, [/credit/, /deposit/, /money in/]);
+
+      // Header names didn't tell us — sniff the actual data to figure out which column is which
+      if (dateIdx === -1){
+        dateIdx = sniffColumn(dataRows, looksLikeDate, []);
+      }
+      if (amountIdx === -1 && debitIdx === -1 && creditIdx === -1){
+        amountIdx = sniffColumn(dataRows, looksLikeAmount, [dateIdx]);
+      }
+      if (descIdx === -1){
+        // Pick the widest text-heavy column that isn't the date or amount column
+        const used = [dateIdx, amountIdx, debitIdx, creditIdx].filter(i => i >= 0);
+        let bestIdx = -1, bestLen = 0;
+        const colCount = dataRows[0] ? dataRows[0].length : 0;
+        for (let c=0;c<colCount;c++){
+          if (used.includes(c)) continue;
+          const avgLen = dataRows.slice(0,10).reduce((sum,row) => sum + (row[c]||'').length, 0);
+          if (avgLen > bestLen){ bestLen = avgLen; bestIdx = c; }
+        }
+        descIdx = bestIdx;
+      }
+
+      if (dateIdx === -1 || (amountIdx === -1 && debitIdx === -1 && creditIdx === -1)){
+        showToast(`Couldn't recognize the columns in "${file.name}" — try renaming the date/amount headers, or let me know the format`);
+        return;
+      }
 
       const existingSigs = new Set(transactions.map(t => txSignature(t.date, t.description, t.amount)));
       let addedCount = 0, dupCount = 0;
 
-      for (let r=1;r<rows.length;r++){
-        const row = rows[r];
+      for (let r=0;r<dataRows.length;r++){
+        const row = dataRows[r];
         if (row.every(f => f.trim()==='')) continue;
         const dateRaw = dateIdx >= 0 ? row[dateIdx] : '';
         const desc = descIdx >= 0 ? row[descIdx] : row.filter((_,i)=>i!==dateIdx).join(' ');
