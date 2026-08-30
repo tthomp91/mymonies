@@ -58,6 +58,58 @@
     color:var(--muted);
     font-size:14px;
   }
+  .privacy-badge{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    margin-top:14px;
+    padding:7px 15px;
+    background:var(--sage-light);
+    border:1px solid var(--sage);
+    border-radius:20px;
+    font-family:'Inter',sans-serif;
+    font-size:12px;
+    font-weight:500;
+    color:var(--forest-deep);
+  }
+  .reset-cat-btn{
+    background:none;
+    border:none;
+    color:var(--muted);
+    font-family:'Inter',sans-serif;
+    font-size:11.5px;
+    text-decoration:underline;
+    cursor:pointer;
+    padding:0;
+  }
+  .reset-cat-btn:hover{color:var(--rust);}
+  .edit-input{
+    font-family:'Inter',sans-serif;
+    font-size:12.5px;
+    padding:5px 7px;
+    border:1px solid var(--sage);
+    border-radius:6px;
+    width:100%;
+    box-sizing:border-box;
+  }
+  .edit-input:focus{outline:none;border-color:var(--forest);}
+  .amt input.edit-input{text-align:right;}
+  .insights-panel{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    padding:16px 28px 0;
+  }
+  .insight-chip{
+    font-family:'Inter',sans-serif;
+    font-size:12.5px;
+    padding:8px 14px;
+    border-radius:20px;
+    background:#F6F5EF;
+    border:1px solid var(--paper-line);
+  }
+  .insight-chip.insight-up{color:#B5533C;border-color:#EBD3CB;}
+  .insight-chip.insight-down{color:#1E8E63;border-color:#CFE6D9;}
 
   .sheet{
     background:var(--paper);
@@ -575,6 +627,7 @@
     <div class="eyebrow">Statement · Ledger · Reconciled Locally</div>
     <h1>My Monies</h1>
     <p>Upload a bank CSV, everything else runs in your browser and stays on your machine.</p>
+    <div class="privacy-badge">🔒 Your data stays on this device — nothing is uploaded, synced, or shared</div>
   </header>
 
   <div class="sheet">
@@ -601,6 +654,8 @@
       <div class="month-tabs-row" id="monthTabs"></div>
       <button class="clear-btn" id="printSummaryBtn" title="Open a clean, printable summary of the selected month">🖨 Print summary</button>
     </div>
+
+    <div class="insights-panel" id="insightsPanel"></div>
 
     <div class="trend-panel">
       <div class="trend-panel-grid">
@@ -633,7 +688,10 @@
 
     <div class="body-grid">
       <div class="categories-panel">
-        <h3>Expenses by Category</h3>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;">
+          <h3 style="margin:0;">Expenses by Category</h3>
+          <button class="reset-cat-btn" id="resetCatBtn" title="Restore the standard starting category list">Reset to default</button>
+        </div>
         <div id="categoryBreakdown"></div>
         <button class="add-cat-btn" id="addExpenseCatBtn" data-type="expense">+ Add category</button>
         <div id="addExpenseCatForm"></div>
@@ -649,6 +707,7 @@
           <div class="tabs">
             <button class="tab-btn active" data-tab="transactions">Transactions</button>
             <button class="tab-btn" data-tab="categories">Category Totals</button>
+            <button class="tab-btn" data-tab="recurring">Recurring</button>
           </div>
           <div class="tab-row-right">
             <input type="text" id="searchInput" class="search-input" placeholder="Search description…">
@@ -666,7 +725,7 @@
                   <th>Description</th>
                   <th>Category</th>
                   <th style="text-align:right;">Amount</th>
-                  <th style="width:28px;"></th>
+                  <th style="width:52px;"></th>
                 </tr>
               </thead>
               <tbody id="txBody"></tbody>
@@ -696,6 +755,20 @@
                 <tfoot><tr><td>Total</td><td style="text-align:right;" id="incomeTotalsSum"></td><td></td></tr></tfoot>
               </table>
             </div>
+          </div>
+        </div>
+
+        <div id="tab-recurring" class="tab-pane">
+          <div id="recurringSummary" style="font-size:12.5px;color:var(--muted);margin-bottom:14px;"></div>
+          <div class="empty-state" id="recurringEmpty" style="display:none;">
+            <span class="big">🔁</span>
+            Not enough history yet to spot recurring charges. Import a few months of statements and check back.
+          </div>
+          <div id="recurringTableWrap" style="display:none;">
+            <table class="totals-table">
+              <thead><tr><th>Description</th><th>Category</th><th style="text-align:right;">Typical Amount</th><th style="text-align:center;">Seen</th><th>Last Charged</th></tr></thead>
+              <tbody id="recurringBody"></tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -779,6 +852,26 @@ function removeCategory(type, name){
   render();
 }
 
+function resetCategoriesToDefault(){
+  const customExpense = EXPENSE_CATEGORIES.filter(c => !DEFAULT_EXPENSE_CATEGORIES.includes(c));
+  const customIncome = INCOME_CATEGORIES.filter(c => !DEFAULT_INCOME_CATEGORIES.includes(c));
+  const removedSet = new Set([...customExpense, ...customIncome]);
+  const affected = transactions.filter(tx => removedSet.has(tx.category)).length;
+  const msg = affected > 0
+    ? `Reset to the standard category list? Your ${removedSet.size} custom categor${removedSet.size===1?'y':'ies'} will be removed and ${affected} transaction${affected===1?'':'s'} using ${removedSet.size===1?'it':'them'} will move to Uncategorized. Transactions themselves are not deleted.`
+    : 'Reset to the standard category list? This does not delete any transactions.';
+  if (!confirm(msg)) return;
+  removedSet.forEach(c => delete CATEGORY_LIMITS[c]);
+  transactions.forEach(tx => { if (removedSet.has(tx.category)) tx.category = 'Uncategorized'; });
+  EXPENSE_CATEGORIES = [...DEFAULT_EXPENSE_CATEGORIES];
+  INCOME_CATEGORIES = [...DEFAULT_INCOME_CATEGORIES];
+  categoryFilter = null;
+  saveCategories();
+  saveState();
+  render();
+  showToast('Categories reset to default');
+}
+
 function setCategoryLimit(name){
   const current = CATEGORY_LIMITS[name];
   const input = prompt(`Set a limit for "${name}" (leave blank to remove the limit):`, current != null ? current : '');
@@ -825,6 +918,7 @@ let transactions = JSON.parse(localStorage.getItem('ledger_transactions') || '[]
 let learnedRules = JSON.parse(localStorage.getItem('ledger_rules') || '{}'); // keyword -> category
 let categoryFilter = null; // category name currently filtering the transactions table, or null for all
 let searchQuery = ''; // free-text filter on description
+let editingTxId = null; // id of the transaction row currently in edit mode, or null
 
 /* ---------- Month filtering ---------- */
 // selectedMonth is either 'YYYY-MM' or the special value 'all'
@@ -1264,6 +1358,26 @@ function showToast(message){
   toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
 }
 
+function saveTxEdit(id){
+  const tx = transactions.find(t => t.id === id);
+  if (!tx) return;
+  const dateInp = document.getElementById('edit-date-' + id);
+  const descInp = document.getElementById('edit-desc-' + id);
+  const amtInp = document.getElementById('edit-amt-' + id);
+  const newDesc = descInp.value.trim();
+  const newAmtAbs = parseFloat(String(amtInp.value).replace(/[^0-9.]/g, ''));
+  if (!newDesc){ showToast("Description can't be empty"); return; }
+  if (isNaN(newAmtAbs) || newAmtAbs < 0){ showToast('Enter a valid amount'); return; }
+  const sign = tx.amount < 0 ? -1 : 1; // preserve whether it was an expense or income
+  tx.date = dateInp.value || tx.date;
+  tx.description = newDesc;
+  tx.amount = sign * newAmtAbs;
+  editingTxId = null;
+  saveState();
+  render();
+  showToast('Transaction updated');
+}
+
 function removeTransaction(id){
   const idx = transactions.findIndex(t => t.id === id);
   if (idx === -1) return;
@@ -1278,10 +1392,115 @@ function fmtMoney(n){
   return sign + '$' + Math.abs(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
 }
 
+/* ---------- Recurring / subscription detection ---------- */
+// Strips numbers/punctuation so "NETFLIX.COM #4482" and "NETFLIX.COM #7731" group together
+function normalizeForRecurrence(desc){
+  return (desc || '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function detectRecurring(){
+  const groups = {};
+  transactions.forEach(tx => {
+    if (tx.amount >= 0) return; // only expenses can be "subscriptions"
+    const key = normalizeForRecurrence(tx.description);
+    if (!key) return;
+    (groups[key] = groups[key] || []).push(tx);
+  });
+  const results = [];
+  Object.values(groups).forEach(txs => {
+    const monthsSeen = new Set(txs.map(t => ymKey(t.date)));
+    if (monthsSeen.size < 2) return; // needs to show up in at least 2 different months
+    const amounts = txs.map(t => Math.abs(t.amount));
+    const avg = amounts.reduce((a,b) => a+b, 0) / amounts.length;
+    const maxDev = Math.max(...amounts.map(a => Math.abs(a - avg)));
+    const tolerance = Math.max(avg * 0.2, 3); // allow ~20% or $3 wiggle room (price bumps, tax)
+    if (maxDev > tolerance) return; // amounts too inconsistent to call it recurring
+    const latest = [...txs].sort((a,b) => (b.date||'').localeCompare(a.date||''))[0];
+    results.push({
+      description: latest.description,
+      category: latest.category,
+      avgAmount: avg,
+      months: monthsSeen.size,
+      lastDate: latest.date
+    });
+  });
+  return results.sort((a,b) => b.avgAmount - a.avgAmount);
+}
+function renderRecurring(){
+  const body = document.getElementById('recurringBody');
+  const summary = document.getElementById('recurringSummary');
+  const empty = document.getElementById('recurringEmpty');
+  const wrap = document.getElementById('recurringTableWrap');
+  if (!body) return;
+  const items = detectRecurring();
+  body.innerHTML = '';
+  if (items.length === 0){
+    empty.style.display = 'block';
+    wrap.style.display = 'none';
+    summary.textContent = '';
+    return;
+  }
+  empty.style.display = 'none';
+  wrap.style.display = 'block';
+  const totalMonthly = items.reduce((s,i) => s + i.avgAmount, 0);
+  summary.textContent = `${items.length} likely recurring charge${items.length===1?'':'s'} · about ${fmtMoney(totalMonthly)} a month · looking across all your history, not just the selected month`;
+  items.forEach(item => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(item.description)}</td>
+      <td>${escapeHtml(item.category)}</td>
+      <td style="text-align:right;">${fmtMoney(item.avgAmount)}</td>
+      <td style="text-align:center;">${item.months} months</td>
+      <td>${escapeHtml(item.lastDate || '—')}</td>
+    `;
+    body.appendChild(tr);
+  });
+}
+
+/* ---------- Month-over-month insight chips ---------- */
+function getPrevMonthKey(ym){
+  const [y, m] = ym.split('-').map(Number);
+  const d = new Date(y, m - 2, 1); // m is 1-indexed; JS Date handles the rollover into prior year
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+function renderInsights(){
+  const host = document.getElementById('insightsPanel');
+  if (!host) return;
+  if (selectedMonth === 'all'){
+    host.innerHTML = '';
+    return;
+  }
+  const prevKey = getPrevMonthKey(selectedMonth);
+  const curTx = transactions.filter(t => ymKey(t.date) === selectedMonth && t.amount < 0);
+  const prevTx = transactions.filter(t => ymKey(t.date) === prevKey && t.amount < 0);
+  if (prevTx.length === 0){
+    host.innerHTML = '';
+    return;
+  }
+  const curTotals = {}, prevTotals = {};
+  curTx.forEach(t => curTotals[t.category] = (curTotals[t.category]||0) + Math.abs(t.amount));
+  prevTx.forEach(t => prevTotals[t.category] = (prevTotals[t.category]||0) + Math.abs(t.amount));
+  const cats = new Set([...Object.keys(curTotals), ...Object.keys(prevTotals)]);
+  const diffs = [...cats]
+    .map(cat => ({ cat, diff: (curTotals[cat]||0) - (prevTotals[cat]||0) }))
+    .filter(d => Math.abs(d.diff) >= 10)
+    .sort((a,b) => Math.abs(b.diff) - Math.abs(a.diff))
+    .slice(0, 3);
+  if (diffs.length === 0){
+    host.innerHTML = '';
+    return;
+  }
+  host.innerHTML = diffs.map(d => {
+    const up = d.diff > 0;
+    return `<div class="insight-chip ${up ? 'insight-up' : 'insight-down'}">${up ? '▲' : '▼'} <strong>${escapeHtml(d.cat)}</strong> was ${fmtMoney(Math.abs(d.diff))} ${up ? 'higher' : 'lower'} than ${monthLabel(prevKey)}</div>`;
+  }).join('');
+}
+
 function render(){
   renderMonthTabs();
   renderTrendChart();
   renderCategoryPieChart();
+  renderRecurring();
+  renderInsights();
   const monthlyTx = transactionsForSelectedMonth();
   const monthSuffix = selectedMonth === 'all' ? '' : ` in ${monthLabel(selectedMonth)}`;
   const sorted = [...getVisibleTransactions()]
@@ -1300,13 +1519,32 @@ function render(){
     emptyState.style.display = 'none';
     sorted.forEach(tx => {
       const tr = document.createElement('tr');
+      const isEditing = tx.id === editingTxId;
 
       const dateTd = document.createElement('td');
       dateTd.className = 'date';
-      dateTd.textContent = tx.date || '—';
+      if (isEditing){
+        const inp = document.createElement('input');
+        inp.type = 'date';
+        inp.className = 'edit-input';
+        inp.value = tx.date || '';
+        inp.id = 'edit-date-' + tx.id;
+        dateTd.appendChild(inp);
+      } else {
+        dateTd.textContent = tx.date || '—';
+      }
 
       const descTd = document.createElement('td');
-      descTd.textContent = tx.description;
+      if (isEditing){
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.className = 'edit-input';
+        inp.value = tx.description;
+        inp.id = 'edit-desc-' + tx.id;
+        descTd.appendChild(inp);
+      } else {
+        descTd.textContent = tx.description;
+      }
 
       const catTd = document.createElement('td');
       const select = document.createElement('select');
@@ -1346,15 +1584,47 @@ function render(){
 
       const amtTd = document.createElement('td');
       amtTd.className = 'amt ' + (tx.amount >= 0 ? 'pos' : 'neg');
-      amtTd.textContent = fmtMoney(tx.amount);
+      if (isEditing){
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.inputMode = 'decimal';
+        inp.className = 'edit-input';
+        inp.value = Math.abs(tx.amount).toFixed(2);
+        inp.id = 'edit-amt-' + tx.id;
+        amtTd.appendChild(inp);
+      } else {
+        amtTd.textContent = fmtMoney(tx.amount);
+      }
 
       const removeTd = document.createElement('td');
-      const removeBtn = document.createElement('button');
-      removeBtn.className = 'icon-btn remove';
-      removeBtn.title = 'Remove transaction';
-      removeBtn.textContent = '✕';
-      removeBtn.addEventListener('click', () => removeTransaction(tx.id));
-      removeTd.appendChild(removeBtn);
+      removeTd.style.whiteSpace = 'nowrap';
+      if (isEditing){
+        const saveBtn = document.createElement('button');
+        saveBtn.className = 'icon-btn';
+        saveBtn.title = 'Save changes';
+        saveBtn.textContent = '✓';
+        saveBtn.addEventListener('click', () => saveTxEdit(tx.id));
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'icon-btn remove';
+        cancelBtn.title = 'Cancel';
+        cancelBtn.textContent = '✕';
+        cancelBtn.addEventListener('click', () => { editingTxId = null; render(); });
+        removeTd.appendChild(saveBtn);
+        removeTd.appendChild(cancelBtn);
+      } else {
+        const editBtn = document.createElement('button');
+        editBtn.className = 'icon-btn';
+        editBtn.title = 'Edit transaction';
+        editBtn.textContent = '✎';
+        editBtn.addEventListener('click', () => { editingTxId = tx.id; render(); });
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'icon-btn remove';
+        removeBtn.title = 'Remove transaction';
+        removeBtn.textContent = '✕';
+        removeBtn.addEventListener('click', () => removeTransaction(tx.id));
+        removeTd.appendChild(editBtn);
+        removeTd.appendChild(removeBtn);
+      }
 
       tr.appendChild(dateTd);
       tr.appendChild(descTd);
@@ -1842,6 +2112,7 @@ wireAddTxButton();
 
 document.getElementById('exportCsvBtn').addEventListener('click', exportCsv);
 document.getElementById('printSummaryBtn').addEventListener('click', printMonthlySummary);
+document.getElementById('resetCatBtn').addEventListener('click', resetCategoriesToDefault);
 document.getElementById('searchInput').addEventListener('input', (e) => {
   searchQuery = e.target.value;
   render();
