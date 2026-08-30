@@ -1050,7 +1050,7 @@ function handleFiles(files){
       const rows = parseCSV(e.target.result);
       if (rows.length < 2) return;
       const headers = rows[0];
-      const dateIdx = findCol(headers, [/^date$/, /trans.*date/, /posted/, /^date posted$/]);
+      const dateIdx = findCol(headers, [/^date$/, /trans.*date/, /post.*date/, /^posted$/, /^date posted$/, /date/]);
       const descIdx = findCol(headers, [/desc/, /narrative/, /memo/, /payee/, /merchant/, /name/]);
       const amountIdx = findCol(headers, [/^amount$/, /amt/, /^amount \(\$\)$/, /transaction amount/]);
       const debitIdx = findCol(headers, [/debit/, /withdrawal/, /money out/, /payment/]);
