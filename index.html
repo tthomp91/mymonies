@@ -647,7 +647,6 @@
         <button class="clear-btn" id="saveBudgetBtn" title="Download everything (transactions, categories, limits) as a file you can reopen later">Save budget file</button>
         <button class="clear-btn" id="loadBudgetBtn" title="Reload a budget file you saved earlier">Load budget file</button>
         <button class="clear-btn" id="clearBtn" title="Deletes all transactions. Categories and learned rules stay.">Clear transactions</button>
-        <button class="clear-btn" id="tidyDescBtn" title="Re-cleans every existing transaction's description with the current logic, and rebuilds learned rules to match">Tidy descriptions</button>
         <button class="clear-btn" id="printSummaryBtn" title="Open a clean, printable summary of the selected month">🖨 Print summary</button>
       </div>
     </div>
@@ -2067,27 +2066,6 @@ document.getElementById('clearBtn').addEventListener('click', () => {
     render();
     showToast('Transactions cleared');
   }
-});
-
-document.getElementById('tidyDescBtn').addEventListener('click', () => {
-  if (!transactions.length){ showToast('No transactions to tidy'); return; }
-  let changedCount = 0;
-  transactions.forEach(tx => {
-    const cleaned = cleanDescription(tx.description);
-    if (cleaned !== tx.description){ tx.description = cleaned; changedCount++; }
-  });
-  // Rebuild learned rules from scratch against the freshly cleaned descriptions,
-  // so old signatures built from garbled text (e.g. "amazon com t", "amazon com c")
-  // collapse into one consistent rule per merchant.
-  learnedRules = {};
-  transactions.forEach(tx => {
-    if (tx.category === 'Uncategorized') return;
-    const signature = extractSignature(tx.description);
-    if (signature.length >= 3) learnedRules[signature] = tx.category;
-  });
-  saveState();
-  render();
-  showToast(changedCount ? `Tidied ${changedCount} description${changedCount===1?'':'s'} and rebuilt auto-categorization rules` : 'Descriptions were already tidy');
 });
 
 /* ---------- Manual transaction entry ---------- */
