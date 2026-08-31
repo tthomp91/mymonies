@@ -1782,6 +1782,12 @@ function render(){
 function renderTotalsTable(bodyId, categoryList, totals, grandTotal, uncategorizedAmt){
   const body = document.getElementById(bodyId);
   body.innerHTML = '';
+  if (uncategorizedAmt && uncategorizedAmt > 0){
+    const pct = grandTotal > 0 ? (uncategorizedAmt/grandTotal*100).toFixed(1) : '0.0';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td style="color:#a39d81;">Uncategorized</td><td>${fmtMoney(uncategorizedAmt)}</td><td>${pct}%</td>`;
+    body.appendChild(tr);
+  }
   categoryList.forEach(cat => {
     const amt = totals[cat] || 0;
     const pct = grandTotal > 0 ? (amt/grandTotal*100).toFixed(1) : '0.0';
@@ -1789,12 +1795,6 @@ function renderTotalsTable(bodyId, categoryList, totals, grandTotal, uncategoriz
     tr.innerHTML = `<td>${cat}</td><td>${fmtMoney(amt)}</td><td>${pct}%</td>`;
     body.appendChild(tr);
   });
-  if (uncategorizedAmt && uncategorizedAmt > 0){
-    const pct = grandTotal > 0 ? (uncategorizedAmt/grandTotal*100).toFixed(1) : '0.0';
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td style="color:#a39d81;">Uncategorized</td><td>${fmtMoney(uncategorizedAmt)}</td><td>${pct}%</td>`;
-    body.appendChild(tr);
-  }
 }
 
 function renderBreakdown(elId, categoryList, totals, type, uncategorizedAmt){
@@ -1803,7 +1803,7 @@ function renderBreakdown(elId, categoryList, totals, type, uncategorizedAmt){
 
   let rows = categoryList.map(cat => ({ cat, amt: totals[cat] || 0, uncategorized: false }));
   if (uncategorizedAmt && uncategorizedAmt > 0){
-    rows.push({ cat: 'Uncategorized', amt: uncategorizedAmt, uncategorized: true });
+    rows.unshift({ cat: 'Uncategorized', amt: uncategorizedAmt, uncategorized: true });
   }
 
   // Bring the active filter's category to the top of this list so it sits
