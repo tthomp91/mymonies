@@ -1166,16 +1166,21 @@ function cleanDescription(desc){
   if (!desc) return desc;
   const flat = desc.replace(/\r?\n/g, ' ').trim();
   const rawTokens = flat.split(/\s+/).filter(Boolean);
-  const kept = [];
-  for (const tok of rawTokens){
-    if (isNoiseToken(tok)) continue;
-    // "Seattle Wa" — once we hit a state code, drop the city word right before it too
-    if (US_STATE_CODES.has(tok.toUpperCase()) && kept.length && /^[A-Za-z]+$/.test(kept[kept.length-1])){
-      kept.pop();
-      continue;
+  const dropIdx = new Set();
+  rawTokens.forEach((tok, i) => {
+    // Bare 2-letter state code (CA, GA, WA...) is always noise on its own.
+    if (tok.length === 2 && US_STATE_CODES.has(tok.toUpperCase())){
+      dropIdx.add(i);
+      // "Seattle Wa" — also drop the word right before it in the ORIGINAL text,
+      // but only if it's truly adjacent there (not just adjacent after other
+      // noise, like an order code, has already been stripped out from between
+      // them — that's what let a bare merchant name get mistaken for a city).
+      if (i > 0 && /^[A-Za-z]+$/.test(rawTokens[i-1])) dropIdx.add(i-1);
+      return;
     }
-    kept.push(tok);
-  }
+    if (isNoiseToken(tok)) dropIdx.add(i);
+  });
+  const kept = rawTokens.filter((_, i) => !dropIdx.has(i));
   let s = kept.length ? kept.join(' ') : flat;
   s = s.replace(/^\d{4,}\s+/, '');
   DESC_NOISE_PATTERNS.forEach(re => { s = s.replace(re, ' '); });
@@ -1196,7 +1201,7 @@ function cleanDescription(desc){
   }
 
   const cleaned = tokens.join(' ').trim();
-  return titleCaseMerchant(cleaned || desc.trim());
+  return titleCaseMerchant(cleaned || s.trim() || desc.trim());
 }
 function capitalizeWord(w){
   if (!w) return w;
