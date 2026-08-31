@@ -290,6 +290,18 @@
   }
   .cat-row .swatch{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:9px;flex-shrink:0;}
   .cat-row .name{display:flex;align-items:center;color:var(--ink);font-weight:500;}
+  .drag-handle{
+    cursor:grab;
+    color:var(--paper-line);
+    font-size:15px;
+    padding:2px 5px 2px 0;
+    touch-action:none;
+    user-select:none;
+    flex-shrink:0;
+  }
+  .drag-handle:hover{color:var(--muted);}
+  .cat-row.dragging{opacity:0.4;}
+  .cat-row.drag-over{outline:2px dashed var(--forest);outline-offset:-2px;border-radius:8px;}
   .cat-row .amt{font-family:'Inter',sans-serif;color:var(--muted);font-variant-numeric:tabular-nums;}
   .cat-row .limit-line{
     display:flex;
@@ -1774,6 +1786,8 @@ function renderBreakdown(elId, categoryList, totals, type, uncategorizedAmt){
 
     const div = document.createElement('div');
     div.className = 'cat-row' + (categoryFilter === cat ? ' selected' : '');
+    div.dataset.cat = cat;
+    div.dataset.reorderable = uncategorized ? 'false' : 'true';
     if (!isRenaming) div.addEventListener('click', () => toggleCategoryFilter(cat));
 
     const top = document.createElement('div');
@@ -1803,7 +1817,7 @@ function renderBreakdown(elId, categoryList, totals, type, uncategorizedAmt){
       top.appendChild(actions);
     } else {
       top.innerHTML = `
-        <span class="name"><span class="swatch" style="background:${color};"></span>${escapeHtml(cat)}</span>
+        <span class="name">${uncategorized ? '' : '<span class="drag-handle" title="Drag to reorder">⠿</span>'}<span class="swatch" style="background:${color};"></span>${escapeHtml(cat)}</span>
         <span class="amt">${fmtMoney(amt)}</span>
       `;
       if (!uncategorized){
@@ -1859,7 +1873,59 @@ function renderBreakdown(elId, categoryList, totals, type, uncategorizedAmt){
         });
       }
     }
+
+    const handle = div.querySelector('.drag-handle');
+    if (handle){
+      handle.addEventListener('click', (e) => e.stopPropagation());
+      handle.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragState = { type, name: cat, container: el, targetName: null, insertAfter: false };
+        div.classList.add('dragging');
+        window.addEventListener('pointermove', onCategoryDragMove);
+        window.addEventListener('pointerup', onCategoryDragEnd);
+      });
+    }
   });
+}
+
+/* ---------- Drag-and-drop category reordering (mouse + touch via Pointer Events) ---------- */
+let dragState = null;
+function onCategoryDragMove(e){
+  if (!dragState) return;
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const row = el ? el.closest('.cat-row[data-reorderable="true"]') : null;
+  dragState.container.querySelectorAll('.cat-row.drag-over').forEach(r => r.classList.remove('drag-over'));
+  if (row && dragState.container.contains(row) && row.dataset.cat !== dragState.name){
+    const rect = row.getBoundingClientRect();
+    dragState.insertAfter = (e.clientY - rect.top) > rect.height / 2;
+    dragState.targetName = row.dataset.cat;
+    row.classList.add('drag-over');
+  } else {
+    dragState.targetName = null;
+  }
+}
+function onCategoryDragEnd(){
+  if (!dragState) return;
+  window.removeEventListener('pointermove', onCategoryDragMove);
+  window.removeEventListener('pointerup', onCategoryDragEnd);
+  document.querySelectorAll('.cat-row.dragging').forEach(r => r.classList.remove('dragging'));
+  document.querySelectorAll('.cat-row.drag-over').forEach(r => r.classList.remove('drag-over'));
+  const { type, name, targetName, insertAfter } = dragState;
+  dragState = null;
+  if (targetName) reorderCategory(type, name, targetName, insertAfter);
+}
+function reorderCategory(type, name, targetName, insertAfter){
+  const list = type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  const fromIdx = list.indexOf(name);
+  if (fromIdx === -1) return;
+  list.splice(fromIdx, 1);
+  let toIdx = list.indexOf(targetName);
+  if (toIdx === -1){ list.splice(fromIdx, 0, name); return; }
+  if (insertAfter) toIdx += 1;
+  list.splice(toIdx, 0, name);
+  saveCategories();
+  render();
 }
 
 
