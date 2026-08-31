@@ -647,6 +647,7 @@
         <button class="clear-btn" id="saveBudgetBtn" title="Download everything (transactions, categories, limits) as a file you can reopen later">Save budget file</button>
         <button class="clear-btn" id="loadBudgetBtn" title="Reload a budget file you saved earlier">Load budget file</button>
         <button class="clear-btn" id="clearBtn" title="Deletes all transactions. Categories and learned rules stay.">Clear transactions</button>
+        <button class="clear-btn" id="tidyDescBtn" title="Re-cleans every existing transaction's description with the current logic, and rebuilds learned rules to match">Tidy descriptions</button>
         <button class="clear-btn" id="printSummaryBtn" title="Open a clean, printable summary of the selected month">🖨 Print summary</button>
       </div>
     </div>
@@ -1120,11 +1121,11 @@ function saveState(){
 // so the learned keyword is the actual merchant name, not date/ID noise that won't repeat.
 const NOISE_WORDS = /\b(pos|purchase|debit|credit|payment|recurring|autopay|auto pay|ref|reference|check|card|xx+\d*|transaction|txn|online|web|the)\b/g;
 function extractSignature(desc){
-  let s = desc.toLowerCase();
+  let s = cleanDescription(desc).toLowerCase();
   s = s.replace(NOISE_WORDS, ' ');
   s = s.replace(/[^a-z\s]/g, ' ');   // strip numbers, dates, punctuation
   s = s.replace(/\s+/g, ' ').trim();
-  const words = s.split(' ').filter(Boolean);
+  const words = s.split(' ').filter(w => w.length > 1);
   return words.slice(0, 3).join(' ');
 }
 
@@ -1138,9 +1139,45 @@ const DESC_NOISE_PATTERNS = [
   /\bPMT\b/gi, /\bPAYMENT\b/gi, /\bWEB\b/gi, /\bONLINE\b/gi, /\bTRANS(ACTION)?\b/gi,
   /\bTXN\b/gi, /\bREF(ERENCE)?\b/gi, /\bSQ\s*\*/gi, /\bTST\s*\*/gi, /\bPAYPAL\s*\*/gi
 ];
+// Some bank/card exports put each field of a transaction on its own line inside
+// one description cell: card mask, date/time, merchant, order code, city+state,
+// zip, tracking hash. A line is "noise" if it's one of those fields rather than
+// the merchant name itself.
+// Order/tracking codes: mixed alnum, one case, no separators — e.g. "566t5", "3lwueqkbuz"
+function looksLikeCode(w){
+  return /\d/.test(w) && /[a-z]/i.test(w) && /^[a-z0-9]+$/i.test(w) && w.length >= 4 && w.length <= 14
+    && (w === w.toLowerCase() || w === w.toUpperCase());
+}
+// Classifies individual whitespace-separated tokens from a bank/card export
+// (card mask, date, time, store #, zip/id, order code) so they can be dropped,
+// leaving just the merchant name. Works whether the fields were on separate
+// lines originally, or are already flattened onto one (e.g. re-cleaning a
+// transaction that was imported before this logic existed).
+function isNoiseToken(tok){
+  if (/^X+\d{3,}$/i.test(tok)) return true;                    // card mask: Xx3513
+  if (/^#\d+$/.test(tok)) return true;                          // store number: #3498
+  if (/^\d{1,2}\/\d{1,2}(\/\d{2,4})?$/.test(tok)) return true;  // date: 08/04
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(tok)) return true;        // time: 03:42
+  if (/^\d{3,}$/.test(tok)) return true;                        // zip / plain numeric id
+  if (looksLikeCode(tok)) return true;                          // order/tracking code
+  return false;
+}
+
 function cleanDescription(desc){
   if (!desc) return desc;
-  let s = desc.trim();
+  const flat = desc.replace(/\r?\n/g, ' ').trim();
+  const rawTokens = flat.split(/\s+/).filter(Boolean);
+  const kept = [];
+  for (const tok of rawTokens){
+    if (isNoiseToken(tok)) continue;
+    // "Seattle Wa" — once we hit a state code, drop the city word right before it too
+    if (US_STATE_CODES.has(tok.toUpperCase()) && kept.length && /^[A-Za-z]+$/.test(kept[kept.length-1])){
+      kept.pop();
+      continue;
+    }
+    kept.push(tok);
+  }
+  let s = kept.length ? kept.join(' ') : flat;
   s = s.replace(/^\d{4,}\s+/, '');
   DESC_NOISE_PATTERNS.forEach(re => { s = s.replace(re, ' '); });
   s = s.replace(/\*/g, ' ');
@@ -2030,6 +2067,27 @@ document.getElementById('clearBtn').addEventListener('click', () => {
     render();
     showToast('Transactions cleared');
   }
+});
+
+document.getElementById('tidyDescBtn').addEventListener('click', () => {
+  if (!transactions.length){ showToast('No transactions to tidy'); return; }
+  let changedCount = 0;
+  transactions.forEach(tx => {
+    const cleaned = cleanDescription(tx.description);
+    if (cleaned !== tx.description){ tx.description = cleaned; changedCount++; }
+  });
+  // Rebuild learned rules from scratch against the freshly cleaned descriptions,
+  // so old signatures built from garbled text (e.g. "amazon com t", "amazon com c")
+  // collapse into one consistent rule per merchant.
+  learnedRules = {};
+  transactions.forEach(tx => {
+    if (tx.category === 'Uncategorized') return;
+    const signature = extractSignature(tx.description);
+    if (signature.length >= 3) learnedRules[signature] = tx.category;
+  });
+  saveState();
+  render();
+  showToast(changedCount ? `Tidied ${changedCount} description${changedCount===1?'':'s'} and rebuilt auto-categorization rules` : 'Descriptions were already tidy');
 });
 
 /* ---------- Manual transaction entry ---------- */
