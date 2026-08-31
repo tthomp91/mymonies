@@ -646,7 +646,6 @@
         <button class="clear-btn" id="addTxBtn" title="Manually add a transaction (cash, Venmo, checks, etc.)">+ Add transaction</button>
         <button class="clear-btn" id="saveBudgetBtn" title="Download everything (transactions, categories, limits) as a file you can reopen later">Save budget file</button>
         <button class="clear-btn" id="loadBudgetBtn" title="Reload a budget file you saved earlier">Load budget file</button>
-        <button class="clear-btn" id="tidyBtn" title="Strip bank codes and reference numbers from existing transaction descriptions">Tidy descriptions</button>
         <button class="clear-btn" id="clearBtn" title="Deletes all transactions. Categories and learned rules stay.">Clear transactions</button>
         <button class="clear-btn" id="printSummaryBtn" title="Open a clean, printable summary of the selected month">🖨 Print summary</button>
       </div>
@@ -1952,15 +1951,6 @@ fileInput.addEventListener('change', (e) => { handleFiles(e.target.files); fileI
 dropZone.addEventListener('drop', (e) => {
   e.preventDefault();
   if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
-});
-
-document.getElementById('tidyBtn').addEventListener('click', () => {
-  if (transactions.length === 0){ showToast('No transactions to tidy up'); return; }
-  if (!confirm('Rewrite all existing transaction descriptions to strip bank codes and reference numbers?')) return;
-  transactions.forEach(tx => { tx.description = cleanDescription(tx.description); });
-  saveState();
-  render();
-  showToast('Descriptions tidied up');
 });
 
 /* ---------- Save / Load budget file ---------- */
