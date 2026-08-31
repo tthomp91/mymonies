@@ -1595,8 +1595,21 @@ function render(){
         const signature = extractSignature(tx.description);
         if (signature.length >= 3){
           learnedRules[signature] = select.value;
+          // Sweep the rest of the ledger for other still-Uncategorized transactions
+          // this new rule now applies to (e.g. the other 11 months of "Southside Church")
+          let retroCount = 0;
+          transactions.forEach(other => {
+            if (other.id === tx.id) return;
+            if (other.category !== 'Uncategorized') return;
+            if (categorize(other.description) === select.value){
+              other.category = select.value;
+              retroCount++;
+            }
+          });
           saveState();
-          showToast(`Got it — future "${signature}" transactions will be marked ${select.value}`);
+          showToast(retroCount > 0
+            ? `Got it — also updated ${retroCount} other "${signature}" transaction${retroCount===1?'':'s'} to ${select.value}`
+            : `Got it — future "${signature}" transactions will be marked ${select.value}`);
         } else {
           saveState();
         }
