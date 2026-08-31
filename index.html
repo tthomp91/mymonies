@@ -164,36 +164,12 @@
   .clear-btn:hover{border-color:var(--rust);color:var(--rust);}
 
   /* Month tabs */
-  .month-tabs-outer{
-    display:flex;
-    align-items:center;
-    border-bottom:1px solid var(--paper-line);
-    flex-wrap:wrap;
-  }
   .month-tabs-row{
-    padding:14px 0 14px 28px;
+    padding:14px 28px;
+    border-bottom:1px solid var(--paper-line);
     display:flex;
     gap:6px;
     overflow-x:auto;
-    flex:1;
-    min-width:0; /* lets the row actually shrink and scroll instead of overflowing onto siblings */
-  }
-  .month-tabs-outer > .clear-btn{
-    margin-right:28px;
-    flex-shrink:0;
-  }
-  @media (max-width: 560px){
-    .month-tabs-outer{
-      flex-direction:column;
-      align-items:stretch;
-    }
-    .month-tabs-row{
-      padding:14px 28px 10px;
-    }
-    .month-tabs-outer > .clear-btn{
-      margin:0 28px 14px;
-      align-self:flex-start;
-    }
   }
   .month-tab-btn{
     font-family:'Inter',sans-serif;
@@ -660,15 +636,13 @@
         <button class="clear-btn" id="loadBudgetBtn" title="Reload a budget file you saved earlier">Load budget file</button>
         <button class="clear-btn" id="tidyBtn" title="Strip bank codes and reference numbers from existing transaction descriptions">Tidy descriptions</button>
         <button class="clear-btn" id="clearBtn" title="Deletes all transactions. Categories and learned rules stay.">Clear transactions</button>
+        <button class="clear-btn" id="printSummaryBtn" title="Open a clean, printable summary of the selected month">🖨 Print summary</button>
       </div>
     </div>
 
     <div id="addTxForm"></div>
 
-    <div class="month-tabs-outer">
-      <div class="month-tabs-row" id="monthTabs"></div>
-      <button class="clear-btn" id="printSummaryBtn" title="Open a clean, printable summary of the selected month">🖨 Print summary</button>
-    </div>
+    <div class="month-tabs-row" id="monthTabs"></div>
 
     <div class="insights-panel" id="insightsPanel"></div>
 
@@ -867,6 +841,32 @@ function removeCategory(type, name){
   render();
 }
 
+function renameCategory(type, oldName, newName){
+  newName = (newName || '').trim();
+  if (!newName){ showToast("Category name can't be empty"); return; }
+  if (newName === oldName){ editingCategory = null; render(); return; }
+  const list = type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  const dupExists = list.some(c => c.toLowerCase() === newName.toLowerCase()) || newName.toLowerCase() === 'uncategorized';
+  if (dupExists){ showToast(`"${newName}" already exists`); return; }
+  const idx = list.indexOf(oldName);
+  if (idx === -1) return;
+
+  list[idx] = newName;
+  transactions.forEach(tx => { if (tx.category === oldName) tx.category = newName; });
+  if (CATEGORY_LIMITS[oldName] != null){
+    CATEGORY_LIMITS[newName] = CATEGORY_LIMITS[oldName];
+    delete CATEGORY_LIMITS[oldName];
+  }
+  Object.keys(learnedRules).forEach(sig => { if (learnedRules[sig] === oldName) learnedRules[sig] = newName; });
+  if (categoryFilter === oldName) categoryFilter = newName;
+
+  editingCategory = null;
+  saveCategories();
+  saveState();
+  render();
+  showToast(`Renamed "${oldName}" to "${newName}"`);
+}
+
 function resetCategoriesToDefault(){
   const customExpense = EXPENSE_CATEGORIES.filter(c => !DEFAULT_EXPENSE_CATEGORIES.includes(c));
   const customIncome = INCOME_CATEGORIES.filter(c => !DEFAULT_INCOME_CATEGORIES.includes(c));
@@ -934,6 +934,7 @@ let learnedRules = JSON.parse(localStorage.getItem('ledger_rules') || '{}'); // 
 let categoryFilter = null; // category name currently filtering the transactions table, or null for all
 let searchQuery = ''; // free-text filter on description
 let editingTxId = null; // id of the transaction row currently in edit mode, or null
+let editingCategory = null; // { type, name } of the category currently being renamed, or null
 
 /* ---------- Month filtering ---------- */
 // selectedMonth is either 'YYYY-MM' or the special value 'all'
@@ -1756,39 +1757,70 @@ function renderBreakdown(elId, categoryList, totals, type, uncategorizedAmt){
     const hasLimit = limit != null;
     const pct = hasLimit ? Math.min(amt / limit * 100, 100) : 0;
     const over = hasLimit && amt > limit;
+    const isRenaming = !uncategorized && editingCategory && editingCategory.type === type && editingCategory.name === cat;
 
     const div = document.createElement('div');
     div.className = 'cat-row' + (categoryFilter === cat ? ' selected' : '');
-    div.addEventListener('click', () => toggleCategoryFilter(cat));
+    if (!isRenaming) div.addEventListener('click', () => toggleCategoryFilter(cat));
 
     const top = document.createElement('div');
     top.className = 'row-top';
-    top.innerHTML = `
-      <span class="name"><span class="swatch" style="background:${color};"></span>${cat}</span>
-      <span class="amt">${fmtMoney(amt)}</span>
-    `;
 
-    if (!uncategorized){
+    if (isRenaming){
+      top.innerHTML = `
+        <span class="name" style="flex:1;">
+          <span class="swatch" style="background:${color};"></span>
+          <input type="text" class="edit-input" id="rename-input" value="${escapeHtml(cat)}" maxlength="40" style="flex:1;">
+        </span>
+      `;
       const actions = document.createElement('span');
       actions.className = 'row-actions';
-      const limitBtn = document.createElement('button');
-      limitBtn.className = 'icon-btn';
-      limitBtn.title = hasLimit ? 'Edit limit' : 'Set limit';
-      limitBtn.textContent = hasLimit ? '🎯' : '＋🎯';
-      limitBtn.addEventListener('click', (e) => { e.stopPropagation(); setCategoryLimit(cat); });
-      const removeBtn = document.createElement('button');
-      removeBtn.className = 'icon-btn remove';
-      removeBtn.title = 'Remove category';
-      removeBtn.textContent = '✕';
-      removeBtn.addEventListener('click', (e) => { e.stopPropagation(); removeCategory(type, cat); });
-      actions.appendChild(limitBtn);
-      actions.appendChild(removeBtn);
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'icon-btn';
+      saveBtn.title = 'Save name';
+      saveBtn.textContent = '✓';
+      saveBtn.addEventListener('click', (e) => { e.stopPropagation(); renameCategory(type, cat, top.querySelector('#rename-input').value); });
+      const cancelBtn = document.createElement('button');
+      cancelBtn.className = 'icon-btn remove';
+      cancelBtn.title = 'Cancel';
+      cancelBtn.textContent = '✕';
+      cancelBtn.addEventListener('click', (e) => { e.stopPropagation(); editingCategory = null; render(); });
+      actions.appendChild(saveBtn);
+      actions.appendChild(cancelBtn);
       top.appendChild(actions);
+    } else {
+      top.innerHTML = `
+        <span class="name"><span class="swatch" style="background:${color};"></span>${escapeHtml(cat)}</span>
+        <span class="amt">${fmtMoney(amt)}</span>
+      `;
+      if (!uncategorized){
+        const actions = document.createElement('span');
+        actions.className = 'row-actions';
+        const renameBtn = document.createElement('button');
+        renameBtn.className = 'icon-btn';
+        renameBtn.title = 'Rename category';
+        renameBtn.textContent = '✎';
+        renameBtn.addEventListener('click', (e) => { e.stopPropagation(); editingCategory = { type, name: cat }; render(); });
+        const limitBtn = document.createElement('button');
+        limitBtn.className = 'icon-btn';
+        limitBtn.title = hasLimit ? 'Edit limit' : 'Set limit';
+        limitBtn.textContent = hasLimit ? '🎯' : '＋🎯';
+        limitBtn.addEventListener('click', (e) => { e.stopPropagation(); setCategoryLimit(cat); });
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'icon-btn remove';
+        removeBtn.title = 'Remove category';
+        removeBtn.textContent = '✕';
+        removeBtn.addEventListener('click', (e) => { e.stopPropagation(); removeCategory(type, cat); });
+        actions.appendChild(renameBtn);
+        actions.appendChild(limitBtn);
+        actions.appendChild(removeBtn);
+        top.appendChild(actions);
+      }
     }
 
     div.appendChild(top);
 
-    if (hasLimit){
+    if (hasLimit && !isRenaming){
       const limitLine = document.createElement('div');
       limitLine.className = 'limit-line' + (over ? ' over' : '');
       limitLine.textContent = `${fmtMoney(amt)} of ${fmtMoney(limit)} limit` + (over ? ' — over' : '');
@@ -1801,6 +1833,19 @@ function renderBreakdown(elId, categoryList, totals, type, uncategorizedAmt){
     }
 
     el.appendChild(div);
+
+    if (isRenaming){
+      const inp = div.querySelector('#rename-input');
+      if (inp){
+        inp.focus();
+        inp.select();
+        inp.addEventListener('click', (e) => e.stopPropagation());
+        inp.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') renameCategory(type, cat, inp.value);
+          if (e.key === 'Escape'){ editingCategory = null; render(); }
+        });
+      }
+    }
   });
 }
 
