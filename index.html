@@ -1008,6 +1008,17 @@ const DEFAULT_INCOME_CATEGORIES = [
   "Paycheck","Side Income","Interest","Investment Income","Gifts","Bonus","Other Income"
 ];
 
+// Only categories in this list are eligible for the "Recurring Bills" detector.
+// Groceries, Dining Out, etc. can *look* recurring (similar amount, shows up every
+// couple weeks) without actually being a bill, so we scope the detector to the
+// categories that are genuinely fixed, scheduled charges. Edit this list if your
+// own category names differ or you want to add/remove one.
+const RECURRING_ELIGIBLE_CATEGORIES = new Set([
+  "Housing","Electric","Water","Natural Gas","Internet","Mobile Phone",
+  "Auto Insurance","Health Insurance","Life Insurance","Subscriptions",
+  "Debt Payments","Childcare"
+]);
+
 // Category lists are editable at runtime — persisted so add/remove sticks between sessions
 let EXPENSE_CATEGORIES = JSON.parse(localStorage.getItem('ledger_expense_categories') || 'null') || [...DEFAULT_EXPENSE_CATEGORIES];
 let INCOME_CATEGORIES = JSON.parse(localStorage.getItem('ledger_income_categories') || 'null') || [...DEFAULT_INCOME_CATEGORIES];
@@ -1688,6 +1699,7 @@ function detectRecurring(){
   const groups = {};
   transactions.forEach(tx => {
     if (tx.amount >= 0) return; // only expenses can be "subscriptions"
+    if (!RECURRING_ELIGIBLE_CATEGORIES.has(tx.category)) return; // skip groceries, dining, etc.
     const key = normalizeForRecurrence(tx.description);
     if (!key) return;
     (groups[key] = groups[key] || []).push(tx);
