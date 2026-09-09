@@ -320,6 +320,54 @@
   .cat-row .limit-line.over{color:var(--rust);}
   .bar-track{height:5px;background:var(--paper-line);border-radius:6px;margin-top:5px;overflow:hidden;}
   .bar-fill{height:100%;border-radius:6px;}
+  .budget-line{
+    display:flex;
+    align-items:baseline;
+    flex-wrap:wrap;
+    gap:5px;
+    font-family:'Inter',sans-serif;
+    font-size:11px;
+    color:var(--muted);
+    margin-top:5px;
+  }
+  .budget-line .budget-sep{opacity:.7;}
+  .budget-line .budget-limit-edit{
+    color:var(--forest-deep);
+    font-weight:600;
+    cursor:pointer;
+    border-bottom:1px dashed var(--sage);
+    padding-bottom:1px;
+  }
+  .budget-line .budget-limit-edit:hover{color:var(--forest);border-bottom-color:var(--forest);}
+  .budget-line .budget-remaining{margin-left:auto;font-weight:600;}
+  .budget-line .budget-remaining.ok{color:var(--ok);}
+  .budget-line .budget-remaining.over{color:var(--rust);}
+  .budget-line .budget-set-link{
+    cursor:pointer;
+    text-decoration:underline;
+    text-decoration-style:dashed;
+    text-underline-offset:2px;
+  }
+  .budget-line .budget-set-link:hover{color:var(--forest-deep);}
+  .budget-edit-row{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    width:100%;
+  }
+  .budget-edit-row .budget-edit-label{
+    font-family:'Inter',sans-serif;
+    font-size:11.5px;
+    color:var(--muted);
+    white-space:nowrap;
+  }
+  .budget-edit-row .budget-limit-input{max-width:110px;}
+  .budget-edit-hint{
+    font-family:'Inter',sans-serif;
+    font-size:10px;
+    color:var(--muted);
+    margin-top:3px;
+  }
   .row-actions{display:flex;gap:2px;flex-shrink:0;}
   .icon-btn{
     background:none;
@@ -1127,19 +1175,28 @@ function resetCategoriesToDefault(){
   showToast('Categories reset to default');
 }
 
-function setCategoryLimit(name){
-  const current = CATEGORY_LIMITS[name];
-  const input = prompt(`Set a limit for "${name}" (leave blank to remove the limit):`, current != null ? current : '');
-  if (input === null) return; // cancelled
-  const trimmed = input.trim();
+function saveCategoryLimit(name, rawValue){
+  const trimmed = (rawValue || '').trim();
   if (trimmed === ''){
     delete CATEGORY_LIMITS[name];
   } else {
     const val = parseFloat(trimmed.replace(/[^0-9.]/g,''));
-    if (isNaN(val) || val <= 0){ showToast('Enter a valid positive number'); return; }
+    if (isNaN(val) || val <= 0){ showToast('Enter a valid positive number'); return false; }
     CATEGORY_LIMITS[name] = val;
   }
   saveCategories();
+  return true;
+}
+
+function commitLimitEdit(name, rawValue){
+  if (saveCategoryLimit(name, rawValue)){
+    editingLimit = null;
+    render();
+  }
+}
+
+function cancelLimitEdit(){
+  editingLimit = null;
   render();
 }
 
@@ -1175,6 +1232,7 @@ let categoryFilter = null; // category name currently filtering the transactions
 let searchQuery = ''; // free-text filter on description
 let editingTxId = null; // id of the transaction row currently in edit mode, or null
 let editingCategory = null; // { type, name } of the category currently being renamed, or null
+let editingLimit = null; // { type, name } of the category whose monthly limit is being edited inline, or null
 
 /* ---------- Month filtering ---------- */
 // selectedMonth is either 'YYYY-MM' or the special value 'all'
@@ -2286,12 +2344,13 @@ function renderBreakdown(elId, categoryList, totals, type, uncategorizedAmt){
     const pct = hasLimit ? Math.min(amt / limit * 100, 100) : 0;
     const over = hasLimit && amt > limit;
     const isRenaming = !uncategorized && editingCategory && editingCategory.type === type && editingCategory.name === cat;
+    const isEditingLimit = !uncategorized && editingLimit && editingLimit.type === type && editingLimit.name === cat;
 
     const div = document.createElement('div');
     div.className = 'cat-row' + (categoryFilter === cat ? ' selected' : '');
     div.dataset.cat = cat;
     div.dataset.reorderable = uncategorized ? 'false' : 'true';
-    if (!isRenaming) div.addEventListener('click', () => toggleCategoryFilter(cat));
+    if (!isRenaming && !isEditingLimit) div.addEventListener('click', () => toggleCategoryFilter(cat));
 
     const top = document.createElement('div');
     top.className = 'row-top';
@@ -2331,18 +2390,12 @@ function renderBreakdown(elId, categoryList, totals, type, uncategorizedAmt){
         renameBtn.title = 'Rename category';
         renameBtn.textContent = '✎';
         renameBtn.addEventListener('click', (e) => { e.stopPropagation(); editingCategory = { type, name: cat }; render(); });
-        const limitBtn = document.createElement('button');
-        limitBtn.className = 'icon-btn';
-        limitBtn.title = hasLimit ? 'Edit limit' : 'Set limit';
-        limitBtn.textContent = hasLimit ? '🎯' : '＋🎯';
-        limitBtn.addEventListener('click', (e) => { e.stopPropagation(); setCategoryLimit(cat); });
         const removeBtn = document.createElement('button');
         removeBtn.className = 'icon-btn remove';
         removeBtn.title = 'Remove category';
         removeBtn.textContent = '✕';
         removeBtn.addEventListener('click', (e) => { e.stopPropagation(); removeCategory(type, cat); });
         actions.appendChild(renameBtn);
-        actions.appendChild(limitBtn);
         actions.appendChild(removeBtn);
         top.appendChild(actions);
       }
@@ -2350,16 +2403,50 @@ function renderBreakdown(elId, categoryList, totals, type, uncategorizedAmt){
 
     div.appendChild(top);
 
-    if (hasLimit && !isRenaming){
-      const limitLine = document.createElement('div');
-      limitLine.className = 'limit-line' + (over ? ' over' : '');
-      limitLine.textContent = `${fmtMoney(amt)} of ${fmtMoney(limit)} limit` + (over ? ' — over' : '');
-      div.appendChild(limitLine);
+    if (!uncategorized && !isRenaming){
+      const budgetWrap = document.createElement('div');
+      budgetWrap.className = 'budget-line';
 
-      const track = document.createElement('div');
-      track.className = 'bar-track';
-      track.innerHTML = `<div class="bar-fill" style="width:${pct.toFixed(1)}%;background:${over ? '#B5533C' : color};"></div>`;
-      div.appendChild(track);
+      if (isEditingLimit){
+        budgetWrap.innerHTML = `
+          <span class="budget-edit-row">
+            <span class="budget-edit-label">Monthly budget $</span>
+            <input type="text" class="edit-input budget-limit-input" id="limit-input" value="${limit != null ? limit : ''}" placeholder="e.g. 800" inputmode="decimal">
+          </span>
+        `;
+      } else if (hasLimit){
+        const remaining = limit - amt;
+        budgetWrap.innerHTML = `
+          <span class="budget-spent">${fmtMoney(amt)} spent</span>
+          <span class="budget-sep">of</span>
+          <span class="budget-limit-edit" title="Click to edit your monthly budget">${fmtMoney(limit)}</span>
+          <span class="budget-remaining ${remaining < 0 ? 'over' : 'ok'}">${remaining < 0 ? fmtMoney(Math.abs(remaining)) + ' over' : fmtMoney(remaining) + ' left'}</span>
+        `;
+      } else {
+        budgetWrap.innerHTML = `<span class="budget-set-link">+ Set a monthly budget</span>`;
+      }
+      div.appendChild(budgetWrap);
+
+      if (hasLimit && !isEditingLimit){
+        const track = document.createElement('div');
+        track.className = 'bar-track';
+        track.innerHTML = `<div class="bar-fill" style="width:${pct.toFixed(1)}%;background:${over ? '#B5533C' : color};"></div>`;
+        div.appendChild(track);
+      }
+
+      const limitEditTrigger = budgetWrap.querySelector('.budget-limit-edit') || budgetWrap.querySelector('.budget-set-link');
+      if (limitEditTrigger){
+        limitEditTrigger.addEventListener('click', (e) => { e.stopPropagation(); editingLimit = { type, name: cat }; render(); });
+      }
+      if (isEditingLimit){
+        const limitInput = budgetWrap.querySelector('#limit-input');
+        limitInput.addEventListener('click', (e) => e.stopPropagation());
+        limitInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') commitLimitEdit(cat, limitInput.value);
+          if (e.key === 'Escape') cancelLimitEdit();
+        });
+        limitInput.addEventListener('blur', () => { if (editingLimit && editingLimit.name === cat) commitLimitEdit(cat, limitInput.value); });
+      }
     }
 
     el.appendChild(div);
@@ -2374,6 +2461,14 @@ function renderBreakdown(elId, categoryList, totals, type, uncategorizedAmt){
           if (e.key === 'Enter') renameCategory(type, cat, inp.value);
           if (e.key === 'Escape'){ editingCategory = null; render(); }
         });
+      }
+    }
+
+    if (isEditingLimit){
+      const limitInput = div.querySelector('#limit-input');
+      if (limitInput){
+        limitInput.focus();
+        limitInput.select();
       }
     }
 
