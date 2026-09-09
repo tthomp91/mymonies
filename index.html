@@ -33,7 +33,7 @@
   @media (max-width:760px){
     body{padding:14px 8px 60px;}
   }
-  .wrap{max-width:1080px;margin:0 auto;}
+  .wrap{max-width:1440px;margin:0 auto;}
 
   header.masthead{
     text-align:center;
@@ -259,7 +259,7 @@
     .body-grid{grid-template-columns:1fr;}
   }
   @media (min-width:761px){
-    .cat-body-grid{grid-template-columns:1fr 1.1fr;}
+    .cat-body-grid{grid-template-columns:0.85fr 1.15fr;}
   }
   .categories-panel{
     padding:24px 28px;
@@ -320,54 +320,30 @@
   .cat-row .limit-line.over{color:var(--rust);}
   .bar-track{height:5px;background:var(--paper-line);border-radius:6px;margin-top:5px;overflow:hidden;}
   .bar-fill{height:100%;border-radius:6px;}
-  .budget-line{
-    display:flex;
-    align-items:baseline;
-    flex-wrap:wrap;
-    gap:5px;
-    font-family:'Inter',sans-serif;
-    font-size:11px;
-    color:var(--muted);
-    margin-top:5px;
-  }
-  .budget-line .budget-sep{opacity:.7;}
-  .budget-line .budget-limit-edit{
+  .totals-table .budget-limit-edit{
     color:var(--forest-deep);
     font-weight:600;
     cursor:pointer;
     border-bottom:1px dashed var(--sage);
     padding-bottom:1px;
   }
-  .budget-line .budget-limit-edit:hover{color:var(--forest);border-bottom-color:var(--forest);}
-  .budget-line .budget-remaining{margin-left:auto;font-weight:600;}
-  .budget-line .budget-remaining.ok{color:var(--ok);}
-  .budget-line .budget-remaining.over{color:var(--rust);}
-  .budget-line .budget-set-link{
+  .totals-table .budget-limit-edit:hover{color:var(--forest);border-bottom-color:var(--forest);}
+  .totals-table .budget-set-link{
     cursor:pointer;
+    color:var(--muted);
     text-decoration:underline;
     text-decoration-style:dashed;
     text-underline-offset:2px;
+    font-size:12px;
   }
-  .budget-line .budget-set-link:hover{color:var(--forest-deep);}
-  .budget-edit-row{
-    display:flex;
-    align-items:center;
-    gap:6px;
-    width:100%;
+  .totals-table .budget-set-link:hover{color:var(--forest-deep);}
+  .totals-table .budget-limit-input{
+    width:90px;
+    padding:4px 6px;
+    font-size:12.5px;
   }
-  .budget-edit-row .budget-edit-label{
-    font-family:'Inter',sans-serif;
-    font-size:11.5px;
-    color:var(--muted);
-    white-space:nowrap;
-  }
-  .budget-edit-row .budget-limit-input{max-width:110px;}
-  .budget-edit-hint{
-    font-family:'Inter',sans-serif;
-    font-size:10px;
-    color:var(--muted);
-    margin-top:3px;
-  }
+  .totals-table .remaining-ok{color:var(--ok);font-weight:600;}
+  .totals-table .remaining-over{color:var(--rust);font-weight:600;}
   .row-actions{display:flex;gap:2px;flex-shrink:0;}
   .icon-btn{
     background:none;
@@ -973,17 +949,17 @@
                 <div>
                   <h4>Expenses</h4>
                   <table class="totals-table">
-                    <thead><tr><th>Category</th><th style="text-align:right;">Amount</th><th style="text-align:right;">% of expenses</th></tr></thead>
+                    <thead><tr><th>Category</th><th style="text-align:right;">Amount</th><th style="text-align:right;">Budgeted</th><th style="text-align:right;">Remaining</th><th style="text-align:right;">% of expenses</th></tr></thead>
                     <tbody id="expenseTotalsBody"></tbody>
-                    <tfoot><tr><td>Total</td><td style="text-align:right;" id="expenseTotalsSum"></td><td></td></tr></tfoot>
+                    <tfoot><tr><td>Total</td><td style="text-align:right;" id="expenseTotalsSum"></td><td style="text-align:right;" id="expenseBudgetSum"></td><td style="text-align:right;" id="expenseRemainingSum"></td><td></td></tr></tfoot>
                   </table>
                 </div>
                 <div style="margin-top:24px;">
                   <h4>Income</h4>
                   <table class="totals-table">
-                    <thead><tr><th>Source</th><th style="text-align:right;">Amount</th><th style="text-align:right;">% of income</th></tr></thead>
+                    <thead><tr><th>Source</th><th style="text-align:right;">Amount</th><th style="text-align:right;">Budgeted</th><th style="text-align:right;">Remaining</th><th style="text-align:right;">% of income</th></tr></thead>
                     <tbody id="incomeTotalsBody"></tbody>
-                    <tfoot><tr><td>Total</td><td style="text-align:right;" id="incomeTotalsSum"></td><td></td></tr></tfoot>
+                    <tfoot><tr><td>Total</td><td style="text-align:right;" id="incomeTotalsSum"></td><td style="text-align:right;" id="incomeBudgetSum"></td><td style="text-align:right;" id="incomeRemainingSum"></td><td></td></tr></tfoot>
                   </table>
                 </div>
               </div>
@@ -1232,7 +1208,7 @@ let categoryFilter = null; // category name currently filtering the transactions
 let searchQuery = ''; // free-text filter on description
 let editingTxId = null; // id of the transaction row currently in edit mode, or null
 let editingCategory = null; // { type, name } of the category currently being renamed, or null
-let editingLimit = null; // { type, name } of the category whose monthly limit is being edited inline, or null
+let editingLimit = null; // name of the category whose monthly budget is being edited inline in the totals table, or null
 
 /* ---------- Month filtering ---------- */
 // selectedMonth is either 'YYYY-MM' or the special value 'all'
@@ -2298,24 +2274,116 @@ function render(){
   renderTotalsTable('incomeTotalsBody', INCOME_CATEGORIES, incomeCatTotals, income, uncategorizedIncome);
   document.getElementById('expenseTotalsSum').textContent = fmtMoney(expense);
   document.getElementById('incomeTotalsSum').textContent = fmtMoney(income);
+  fillBudgetFooter('expenseBudgetSum', 'expenseRemainingSum', EXPENSE_CATEGORIES, expenseCatTotals);
+  fillBudgetFooter('incomeBudgetSum', 'incomeRemainingSum', INCOME_CATEGORIES, incomeCatTotals);
+}
+
+function fillBudgetFooter(budgetElId, remainingElId, categoryList, totals){
+  let budgetSum = 0, spentAgainstBudget = 0, anyBudget = false;
+  categoryList.forEach(cat => {
+    const limit = CATEGORY_LIMITS[cat];
+    if (limit != null){
+      anyBudget = true;
+      budgetSum += limit;
+      spentAgainstBudget += (totals[cat] || 0);
+    }
+  });
+  const budgetEl = document.getElementById(budgetElId);
+  const remainingEl = document.getElementById(remainingElId);
+  if (!anyBudget){
+    budgetEl.innerHTML = '<span style="color:var(--muted);">—</span>';
+    remainingEl.innerHTML = '<span style="color:var(--muted);">—</span>';
+    return;
+  }
+  const remaining = budgetSum - spentAgainstBudget;
+  budgetEl.textContent = fmtMoney(budgetSum);
+  remainingEl.innerHTML = remaining < 0
+    ? `<span class="remaining-over">-${fmtMoney(Math.abs(remaining))}</span>`
+    : `<span class="remaining-ok">${fmtMoney(remaining)}</span>`;
 }
 
 function renderTotalsTable(bodyId, categoryList, totals, grandTotal, uncategorizedAmt){
   const body = document.getElementById(bodyId);
   body.innerHTML = '';
+
+  const addRow = (cat, amt, pct, isUncategorized) => {
+    const tr = document.createElement('tr');
+
+    const catTd = document.createElement('td');
+    catTd.textContent = cat;
+    if (isUncategorized) catTd.style.color = '#a39d81';
+    tr.appendChild(catTd);
+
+    const amtTd = document.createElement('td');
+    amtTd.style.textAlign = 'right';
+    amtTd.textContent = fmtMoney(amt);
+    tr.appendChild(amtTd);
+
+    const budgetTd = document.createElement('td');
+    budgetTd.style.textAlign = 'right';
+    const remainingTd = document.createElement('td');
+    remainingTd.style.textAlign = 'right';
+
+    if (isUncategorized){
+      budgetTd.innerHTML = '<span style="color:var(--muted);">—</span>';
+      remainingTd.innerHTML = '<span style="color:var(--muted);">—</span>';
+    } else {
+      const limit = CATEGORY_LIMITS[cat];
+      const hasLimit = limit != null;
+      const isEditing = editingLimit === cat;
+
+      if (isEditing){
+        budgetTd.innerHTML = `<input type="text" class="edit-input budget-limit-input" value="${hasLimit ? limit : ''}" placeholder="0.00" inputmode="decimal" style="text-align:right;">`;
+        remainingTd.innerHTML = '<span style="color:var(--muted);">—</span>';
+      } else if (hasLimit){
+        const remaining = limit - amt;
+        budgetTd.innerHTML = `<span class="budget-limit-edit" title="Click to edit budget">${fmtMoney(limit)}</span>`;
+        remainingTd.innerHTML = remaining < 0
+          ? `<span class="remaining-over">-${fmtMoney(Math.abs(remaining))}</span>`
+          : `<span class="remaining-ok">${fmtMoney(remaining)}</span>`;
+      } else {
+        budgetTd.innerHTML = `<span class="budget-set-link">+ Set</span>`;
+        remainingTd.innerHTML = '<span style="color:var(--muted);">—</span>';
+      }
+    }
+    tr.appendChild(budgetTd);
+    tr.appendChild(remainingTd);
+
+    const pctTd = document.createElement('td');
+    pctTd.style.textAlign = 'right';
+    pctTd.textContent = pct + '%';
+    tr.appendChild(pctTd);
+
+    body.appendChild(tr);
+
+    if (!isUncategorized){
+      const trigger = budgetTd.querySelector('.budget-limit-edit') || budgetTd.querySelector('.budget-set-link');
+      if (trigger) trigger.addEventListener('click', () => { editingLimit = cat; render(); });
+      const input = budgetTd.querySelector('input');
+      if (input){
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') commitLimitEdit(cat, input.value);
+          if (e.key === 'Escape') cancelLimitEdit();
+        });
+        input.addEventListener('blur', () => { if (editingLimit === cat) commitLimitEdit(cat, input.value); });
+      }
+    }
+  };
+
   if (uncategorizedAmt && uncategorizedAmt > 0){
     const pct = grandTotal > 0 ? (uncategorizedAmt/grandTotal*100).toFixed(1) : '0.0';
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td style="color:#a39d81;">Uncategorized</td><td>${fmtMoney(uncategorizedAmt)}</td><td>${pct}%</td>`;
-    body.appendChild(tr);
+    addRow('Uncategorized', uncategorizedAmt, pct, true);
   }
   categoryList.forEach(cat => {
     const amt = totals[cat] || 0;
     const pct = grandTotal > 0 ? (amt/grandTotal*100).toFixed(1) : '0.0';
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${cat}</td><td>${fmtMoney(amt)}</td><td>${pct}%</td>`;
-    body.appendChild(tr);
+    addRow(cat, amt, pct, false);
   });
+
+  if (editingLimit){
+    const activeInput = body.querySelector('input.budget-limit-input');
+    if (activeInput){ activeInput.focus(); activeInput.select(); }
+  }
 }
 
 function renderBreakdown(elId, categoryList, totals, type, uncategorizedAmt){
@@ -2344,13 +2412,12 @@ function renderBreakdown(elId, categoryList, totals, type, uncategorizedAmt){
     const pct = hasLimit ? Math.min(amt / limit * 100, 100) : 0;
     const over = hasLimit && amt > limit;
     const isRenaming = !uncategorized && editingCategory && editingCategory.type === type && editingCategory.name === cat;
-    const isEditingLimit = !uncategorized && editingLimit && editingLimit.type === type && editingLimit.name === cat;
 
     const div = document.createElement('div');
     div.className = 'cat-row' + (categoryFilter === cat ? ' selected' : '');
     div.dataset.cat = cat;
     div.dataset.reorderable = uncategorized ? 'false' : 'true';
-    if (!isRenaming && !isEditingLimit) div.addEventListener('click', () => toggleCategoryFilter(cat));
+    if (!isRenaming) div.addEventListener('click', () => toggleCategoryFilter(cat));
 
     const top = document.createElement('div');
     top.className = 'row-top';
@@ -2403,52 +2470,6 @@ function renderBreakdown(elId, categoryList, totals, type, uncategorizedAmt){
 
     div.appendChild(top);
 
-    if (!uncategorized && !isRenaming){
-      const budgetWrap = document.createElement('div');
-      budgetWrap.className = 'budget-line';
-
-      if (isEditingLimit){
-        budgetWrap.innerHTML = `
-          <span class="budget-edit-row">
-            <span class="budget-edit-label">Monthly budget $</span>
-            <input type="text" class="edit-input budget-limit-input" id="limit-input" value="${limit != null ? limit : ''}" placeholder="e.g. 800" inputmode="decimal">
-          </span>
-        `;
-      } else if (hasLimit){
-        const remaining = limit - amt;
-        budgetWrap.innerHTML = `
-          <span class="budget-spent">${fmtMoney(amt)} spent</span>
-          <span class="budget-sep">of</span>
-          <span class="budget-limit-edit" title="Click to edit your monthly budget">${fmtMoney(limit)}</span>
-          <span class="budget-remaining ${remaining < 0 ? 'over' : 'ok'}">${remaining < 0 ? fmtMoney(Math.abs(remaining)) + ' over' : fmtMoney(remaining) + ' left'}</span>
-        `;
-      } else {
-        budgetWrap.innerHTML = `<span class="budget-set-link">+ Set a monthly budget</span>`;
-      }
-      div.appendChild(budgetWrap);
-
-      if (hasLimit && !isEditingLimit){
-        const track = document.createElement('div');
-        track.className = 'bar-track';
-        track.innerHTML = `<div class="bar-fill" style="width:${pct.toFixed(1)}%;background:${over ? '#B5533C' : color};"></div>`;
-        div.appendChild(track);
-      }
-
-      const limitEditTrigger = budgetWrap.querySelector('.budget-limit-edit') || budgetWrap.querySelector('.budget-set-link');
-      if (limitEditTrigger){
-        limitEditTrigger.addEventListener('click', (e) => { e.stopPropagation(); editingLimit = { type, name: cat }; render(); });
-      }
-      if (isEditingLimit){
-        const limitInput = budgetWrap.querySelector('#limit-input');
-        limitInput.addEventListener('click', (e) => e.stopPropagation());
-        limitInput.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') commitLimitEdit(cat, limitInput.value);
-          if (e.key === 'Escape') cancelLimitEdit();
-        });
-        limitInput.addEventListener('blur', () => { if (editingLimit && editingLimit.name === cat) commitLimitEdit(cat, limitInput.value); });
-      }
-    }
-
     el.appendChild(div);
 
     if (isRenaming){
@@ -2461,14 +2482,6 @@ function renderBreakdown(elId, categoryList, totals, type, uncategorizedAmt){
           if (e.key === 'Enter') renameCategory(type, cat, inp.value);
           if (e.key === 'Escape'){ editingCategory = null; render(); }
         });
-      }
-    }
-
-    if (isEditingLimit){
-      const limitInput = div.querySelector('#limit-input');
-      if (limitInput){
-        limitInput.focus();
-        limitInput.select();
       }
     }
 
