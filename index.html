@@ -977,7 +977,7 @@
             </div>
             <div id="recurringTableWrap" style="display:none;">
               <table class="totals-table">
-                <thead><tr><th>Description</th><th>Category</th><th style="text-align:right;">Typical Amount</th><th style="text-align:center;">Seen</th><th>Last Charged</th><th>Next Due</th><th>Confidence</th></tr></thead>
+                <thead><tr><th style="text-align:center;">Subscription?</th><th>Description</th><th>Category</th><th style="text-align:right;">Typical Amount</th><th style="text-align:center;">Seen</th><th>Last Charged</th><th>Next Due</th><th>Confidence</th></tr></thead>
                 <tbody id="recurringBody"></tbody>
               </table>
             </div>
@@ -1004,7 +1004,7 @@
               <div id="calUpcomingList"></div>
               <div class="empty-state" id="calEmptyState" style="display:none;padding:36px 20px;">
                 <span class="big">📅</span>
-                No recurring bills detected yet. Import a few months of statements to see predicted due dates here.
+                No confirmed subscriptions yet. Head to Recurring Bills and check off the ones that are real subscriptions (Netflix, utilities, etc.) to see their due dates here.
               </div>
             </div>
           </div>
@@ -1205,6 +1205,21 @@ const DEFAULT_RULES = {
 /* ---------- State ---------- */
 let transactions = JSON.parse(localStorage.getItem('ledger_transactions') || '[]');
 let learnedRules = JSON.parse(localStorage.getItem('ledger_rules') || '{}'); // keyword -> category
+// Merchant keys (see normalizeForRecurrence) the user has explicitly confirmed as real
+// subscriptions/bills. Recurring detection still runs on everything, but only confirmed
+// items show up in the calendar and "Upcoming bills" — this is what keeps a recurring
+// Publix or Bojangles run from being treated like a Netflix subscription.
+let confirmedSubscriptions = new Set(JSON.parse(localStorage.getItem('ledger_confirmed_subs') || '[]'));
+function saveSubscriptions(){
+  localStorage.setItem('ledger_confirmed_subs', JSON.stringify([...confirmedSubscriptions]));
+}
+function toggleSubscription(key){
+  if (confirmedSubscriptions.has(key)) confirmedSubscriptions.delete(key);
+  else confirmedSubscriptions.add(key);
+  saveSubscriptions();
+  renderRecurring();
+  renderCalendar();
+}
 let categoryFilter = null; // category name currently filtering the transactions table, or null for all
 let searchQuery = ''; // free-text filter on description
 let editingTxId = null; // id of the transaction row currently in edit mode, or null
@@ -1794,13 +1809,13 @@ async function syncBankTransactions(retryOnAuthFail){
       return;
     }
 
-    const data = await res.json().catch(() => null);
-
     if (!res.ok){
-      showToast(data && data.error ? `Bank sync error: ${data.error}` : `Bank sync failed (server said ${res.status})`);
+      showToast(`Bank sync failed (server said ${res.status}) — try again in a bit`);
       return;
     }
-    if (data && data.error){
+
+    const data = await res.json();
+    if (data.error){
       showToast(`Bank sync error: ${data.error}`);
       return;
     }
@@ -1953,6 +1968,7 @@ function detectRecurring(){
     else if (txs.length >= 2) confidence = 'medium';
 
     results.push({
+      key: key,
       description: latest.description,
       category: latest.category,
       avgAmount: avg,
@@ -1962,7 +1978,8 @@ function detectRecurring(){
       dates: dates,
       avgIntervalDays: avgIntervalDays,
       nextDueDate: nextDueDate,
-      confidence: confidence
+      confidence: confidence,
+      confirmed: confirmedSubscriptions.has(key)
     });
   });
   return results.sort((a,b) => b.avgAmount - a.avgAmount);
@@ -1983,15 +2000,18 @@ function renderRecurring(){
   }
   empty.style.display = 'none';
   wrap.style.display = 'block';
-  const totalMonthly = items.reduce((s,i) => s + i.avgAmount, 0);
-  summary.textContent = `${items.length} likely recurring charge${items.length===1?'':'s'} · about ${fmtMoney(totalMonthly)} a month · looking across all your history, not just the selected month`;
+  const confirmedCount = items.filter(i => i.confirmed).length;
+  const totalMonthly = items.filter(i => i.confirmed).reduce((s,i) => s + i.avgAmount, 0);
+  summary.textContent = `${items.length} recurring charge${items.length===1?'':'s'} found · ${confirmedCount} confirmed as subscriptions/bills (about ${fmtMoney(totalMonthly)} a month) · check the ones that are real subscriptions to have them show on the calendar`;
   const confColor = { high: 'var(--ok)', medium: 'var(--amber)', low: 'var(--muted)' };
   items.forEach(item => {
     const tr = document.createElement('tr');
     const nextDueLabel = item.nextDueDate
       ? new Date(item.nextDueDate + 'T00:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric'})
       : '—';
+    const safeKey = escapeHtml(item.key).replace(/'/g, "\\'");
     tr.innerHTML = `
+      <td style="text-align:center;"><input type="checkbox" ${item.confirmed ? 'checked' : ''} onchange="toggleSubscription('${safeKey}')" style="width:16px;height:16px;cursor:pointer;"></td>
       <td>${escapeHtml(item.description)}</td>
       <td>${escapeHtml(item.category)}</td>
       <td style="text-align:right;">${fmtMoney(item.avgAmount)}</td>
@@ -2016,7 +2036,7 @@ function shiftMonth(ym, delta){
 // Combines actual past charge dates with projected future occurrences (stepping by the
 // learned billing-cycle length) so both history and near-term predictions show on the grid.
 function buildBillEvents(occurrencesAhead){
-  const items = detectRecurring();
+  const items = detectRecurring().filter(item => item.confirmed);
   const events = [];
   items.forEach(item => {
     item.dates.forEach(d => events.push({
@@ -2075,7 +2095,7 @@ function renderCalendar(){
     const isToday = c.iso === todayIso;
     const shown = dayEvents.slice(0, 2).map(e => {
       const short = e.description.length > 11 ? e.description.slice(0,10) + '…' : e.description;
-      return `<div class="cal-bill-chip${e.predicted ? ' predicted' : ''}" title="${escapeHtml(e.description)} — ${fmtMoney(e.amount)}${e.predicted ? ' (predicted)' : ''}">${escapeHtml(short)}</div>`;
+      return `<div class="cal-bill-chip${e.predicted ? ' predicted' : ''}" title="${escapeHtml(e.description)}${e.predicted ? ' (predicted)' : ''}">${escapeHtml(short)}</div>`;
     }).join('');
     const more = dayEvents.length > 2 ? `<div class="cal-bill-chip" style="background:none;color:var(--muted);">+${dayEvents.length-2} more</div>` : '';
     return `<div class="cal-cell${isToday ? ' today' : ''}"><div class="cal-daynum">${c.day}</div><div class="cal-bills">${shown}${more}</div></div>`;
@@ -2095,7 +2115,6 @@ function renderCalendar(){
       <div class="cal-upcoming-row">
         <span class="cal-upcoming-date">${new Date(e.date + 'T00:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric'})}</span>
         <span class="cal-upcoming-desc">${escapeHtml(e.description)}<span style="color:var(--muted);"> · ${escapeHtml(e.category)}</span></span>
-        <span class="cal-upcoming-amt">${fmtMoney(e.amount)}</span>
         ${e.predicted ? '<span class="cal-upcoming-tag">predicted</span>' : ''}
       </div>
     `).join('');
