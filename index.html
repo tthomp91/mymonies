@@ -33,7 +33,7 @@
   @media (max-width:760px){
     body{padding:14px 8px 60px;}
   }
-  .wrap{max-width:1440px;margin:0 auto;}
+  .wrap{max-width:1800px;margin:0 auto;}
 
   header.masthead{
     text-align:center;
@@ -671,7 +671,7 @@
     display:flex;
     align-items:flex-start;
     gap:20px;
-    max-width:1160px;
+    max-width:1700px;
     margin:0 auto;
   }
   .sidebar{
@@ -840,24 +840,24 @@
     <div class="main-content">
       <div class="sheet">
 
+        <div class="stamps">
+          <div class="stamp income">
+            <div class="label">Income</div>
+            <div class="value" id="totalIncome">$0.00</div>
+          </div>
+          <div class="stamp expense">
+            <div class="label">Expenses</div>
+            <div class="value" id="totalExpense">$0.00</div>
+          </div>
+          <div class="stamp net" id="netStamp">
+            <div class="label">Net Savings</div>
+            <div class="value" id="netTotal">$0.00</div>
+            <span class="badge" id="netBadge">BALANCED</span>
+          </div>
+        </div>
+
         <div id="section-dashboard" class="section-pane active">
           <div class="greeting-row" id="greetingRow"></div>
-
-          <div class="stamps">
-            <div class="stamp income">
-              <div class="label">Income</div>
-              <div class="value" id="totalIncome">$0.00</div>
-            </div>
-            <div class="stamp expense">
-              <div class="label">Expenses</div>
-              <div class="value" id="totalExpense">$0.00</div>
-            </div>
-            <div class="stamp net" id="netStamp">
-              <div class="label">Net Savings</div>
-              <div class="value" id="netTotal">$0.00</div>
-              <span class="badge" id="netBadge">BALANCED</span>
-            </div>
-          </div>
 
           <div class="insights-panel" id="insightsPanel"></div>
 
