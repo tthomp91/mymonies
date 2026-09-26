@@ -948,19 +948,31 @@
             <div class="table-panel" style="padding:24px 0 8px 28px;">
               <div class="totals-grid" style="grid-template-columns:1fr;">
                 <div>
-                  <h4>Expenses</h4>
-                  <table class="totals-table">
+                  <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;">
+                    <h4 style="margin:0;">Expenses</h4>
+                    <div style="font-size:12.5px;color:var(--muted);display:flex;gap:16px;">
+                      <span>Total <strong id="expenseTotalsSum" style="color:var(--ink);font-family:'Inter',sans-serif;"></strong></span>
+                      <span>Budgeted <strong id="expenseBudgetSum" style="color:var(--forest-deep);font-family:'Inter',sans-serif;"></strong></span>
+                      <span>Remaining <strong id="expenseRemainingSum" style="font-family:'Inter',sans-serif;"></strong></span>
+                    </div>
+                  </div>
+                  <table class="totals-table" style="margin-top:10px;">
                     <thead><tr><th>Category</th><th style="text-align:right;">Amount</th><th style="text-align:right;">Budgeted</th><th style="text-align:right;">Remaining</th><th style="text-align:right;">% of expenses</th></tr></thead>
                     <tbody id="expenseTotalsBody"></tbody>
-                    <tfoot><tr><td>Total</td><td style="text-align:right;" id="expenseTotalsSum"></td><td style="text-align:right;" id="expenseBudgetSum"></td><td style="text-align:right;" id="expenseRemainingSum"></td><td></td></tr></tfoot>
                   </table>
                 </div>
                 <div style="margin-top:24px;">
-                  <h4>Income</h4>
-                  <table class="totals-table">
+                  <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;">
+                    <h4 style="margin:0;">Income</h4>
+                    <div style="font-size:12.5px;color:var(--muted);display:flex;gap:16px;">
+                      <span>Total <strong id="incomeTotalsSum" style="color:var(--ink);font-family:'Inter',sans-serif;"></strong></span>
+                      <span>Budgeted <strong id="incomeBudgetSum" style="color:var(--forest-deep);font-family:'Inter',sans-serif;"></strong></span>
+                      <span>Remaining <strong id="incomeRemainingSum" style="font-family:'Inter',sans-serif;"></strong></span>
+                    </div>
+                  </div>
+                  <table class="totals-table" style="margin-top:10px;">
                     <thead><tr><th>Source</th><th style="text-align:right;">Amount</th><th style="text-align:right;">Budgeted</th><th style="text-align:right;">Remaining</th><th style="text-align:right;">% of income</th></tr></thead>
                     <tbody id="incomeTotalsBody"></tbody>
-                    <tfoot><tr><td>Total</td><td style="text-align:right;" id="incomeTotalsSum"></td><td style="text-align:right;" id="incomeBudgetSum"></td><td style="text-align:right;" id="incomeRemainingSum"></td><td></td></tr></tfoot>
                   </table>
                 </div>
               </div>
