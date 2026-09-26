@@ -1794,13 +1794,13 @@ async function syncBankTransactions(retryOnAuthFail){
       return;
     }
 
+    const data = await res.json().catch(() => null);
+
     if (!res.ok){
-      showToast(`Bank sync failed (server said ${res.status}) — try again in a bit`);
+      showToast(data && data.error ? `Bank sync error: ${data.error}` : `Bank sync failed (server said ${res.status})`);
       return;
     }
-
-    const data = await res.json();
-    if (data.error){
+    if (data && data.error){
       showToast(`Bank sync error: ${data.error}`);
       return;
     }
