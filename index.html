@@ -884,6 +884,7 @@
             <input type="file" id="fileInput" accept=".csv,.pdf" multiple>
             <input type="file" id="budgetFileInput" accept=".json" style="display:none;">
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="clear-btn" id="syncBankBtn" title="Pull recent transactions from your connected bank">🏦 Sync bank<span id="syncBankLast" style="opacity:.65;font-weight:400;"></span></button>
               <button class="clear-btn" id="addTxBtn" title="Manually add a transaction (cash, Venmo, checks, etc.)">+ Add transaction</button>
               <button class="clear-btn" id="saveBudgetBtn" title="Download everything (transactions, categories, limits) as a file you can reopen later">Save budget file</button>
               <button class="clear-btn" id="loadBudgetBtn" title="Reload a budget file you saved earlier">Load budget file</button>
@@ -1743,6 +1744,82 @@ async function handlePdfFile(file){
   ingestTransactions(triples, file.name);
 }
 
+/* ---------- Bank sync via Cloudflare Worker (SimpleFIN) ---------- */
+const BANK_SYNC_WORKER_URL = 'https://mymonies-sync.tthomp91.workers.dev';
+
+function getBankSyncPassword(forcePrompt){
+  let pw = localStorage.getItem('bankSyncPassword');
+  if (!pw || forcePrompt){
+    pw = window.prompt('Enter your bank sync password (set this when you created the Cloudflare Worker):');
+    if (pw) localStorage.setItem('bankSyncPassword', pw);
+  }
+  return pw;
+}
+
+function updateSyncBankLastLabel(){
+  const el = document.getElementById('syncBankLast');
+  if (!el) return;
+  const last = localStorage.getItem('bankSyncLastTime');
+  if (!last){ el.textContent = ''; return; }
+  const mins = Math.round((Date.now() - Number(last)) / 60000);
+  let label;
+  if (mins < 1) label = 'just now';
+  else if (mins < 60) label = mins + 'm ago';
+  else if (mins < 60*24) label = Math.round(mins/60) + 'h ago';
+  else label = Math.round(mins/60/24) + 'd ago';
+  el.textContent = ' · ' + label;
+}
+
+async function syncBankTransactions(retryOnAuthFail){
+  const btn = document.getElementById('syncBankBtn');
+  const password = getBankSyncPassword(false);
+  if (!password) return;
+
+  if (btn){ btn.disabled = true; btn.style.opacity = '0.6'; }
+  try {
+    const res = await fetch(BANK_SYNC_WORKER_URL, {
+      headers: { 'X-App-Password': password }
+    });
+
+    if (res.status === 401){
+      // Stored password is wrong (or none) — clear it and ask again, once.
+      localStorage.removeItem('bankSyncPassword');
+      if (!retryOnAuthFail){
+        showToast("That password didn't work — try again");
+        const retryPw = getBankSyncPassword(true);
+        if (retryPw) return syncBankTransactions(true);
+      } else {
+        showToast('Bank sync password incorrect');
+      }
+      return;
+    }
+
+    if (!res.ok){
+      showToast(`Bank sync failed (server said ${res.status}) — try again in a bit`);
+      return;
+    }
+
+    const data = await res.json();
+    if (data.error){
+      showToast(`Bank sync error: ${data.error}`);
+      return;
+    }
+
+    const triples = (data.transactions || []).map(t => [t.date, t.description, t.amount]);
+    if (triples.length === 0){
+      showToast('No transactions returned from your bank');
+      return;
+    }
+    ingestTransactions(triples, 'Bank sync');
+    localStorage.setItem('bankSyncLastTime', String(Date.now()));
+    updateSyncBankLastLabel();
+  } catch (err){
+    showToast("Couldn't reach the bank sync service — check your connection");
+  } finally {
+    if (btn){ btn.disabled = false; btn.style.opacity = '1'; }
+  }
+}
+
 /* ---------- Shared ingestion for CSV rows and PDF lines: [dateRaw, desc, amount] ---------- */
 function ingestTransactions(triples, fileName){
   const existingSigs = new Set(transactions.map(t => txSignature(t.date, t.description, t.amount)));
@@ -2553,6 +2630,9 @@ const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
 
 fileInput.addEventListener('change', (e) => { handleFiles(e.target.files); fileInput.value=''; });
+
+document.getElementById('syncBankBtn').addEventListener('click', () => syncBankTransactions(false));
+updateSyncBankLastLabel();
 
 ['dragover','dragenter'].forEach(evt => {
   dropZone.addEventListener(evt, (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
