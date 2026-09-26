@@ -1833,9 +1833,17 @@ async function syncBankTransactions(retryOnAuthFail){
 }
 
 /* ---------- Shared ingestion for CSV rows and PDF lines: [dateRaw, desc, amount] ---------- */
+// Signatures (see txSignature) of transactions someone has manually deleted with the
+// X button. Kept even after the transaction itself is gone, so a bank sync or re-import
+// won't bring the same charge back from the dead.
+let ignoredSignatures = new Set(JSON.parse(localStorage.getItem('ledger_ignored_sigs') || '[]'));
+function saveIgnoredSignatures(){
+  localStorage.setItem('ledger_ignored_sigs', JSON.stringify([...ignoredSignatures]));
+}
+
 function ingestTransactions(triples, fileName){
   const existingSigs = new Set(transactions.map(t => txSignature(t.date, t.description, t.amount)));
-  let addedCount = 0, dupCount = 0;
+  let addedCount = 0, dupCount = 0, ignoredCount = 0;
 
   triples.forEach(([dateRaw, desc, amount], r) => {
     if (amount === null || amount === undefined || !desc) return;
@@ -1844,6 +1852,10 @@ function ingestTransactions(triples, fileName){
     const sig = txSignature(normDate, cleanDesc, amount);
     if (existingSigs.has(sig)){
       dupCount++;
+      return;
+    }
+    if (ignoredSignatures.has(sig)){
+      ignoredCount++;
       return;
     }
     existingSigs.add(sig);
@@ -1860,12 +1872,15 @@ function ingestTransactions(triples, fileName){
 
   saveState();
   render();
-  if (addedCount === 0 && dupCount === 0){
+  if (addedCount === 0 && dupCount === 0 && ignoredCount === 0){
     showToast(`Couldn't find any transactions in "${fileName}"`);
     return;
   }
-  showToast(dupCount > 0
-    ? `Added ${addedCount} transaction${addedCount===1?'':'s'} · skipped ${dupCount} already in your ledger`
+  const parts = [];
+  if (dupCount > 0) parts.push(`skipped ${dupCount} already in your ledger`);
+  if (ignoredCount > 0) parts.push(`skipped ${ignoredCount} you'd previously removed`);
+  showToast(parts.length
+    ? `Added ${addedCount} transaction${addedCount===1?'':'s'} · ${parts.join(' · ')}`
     : `Added ${addedCount} transaction${addedCount===1?'':'s'}`);
 }
 
@@ -1902,10 +1917,13 @@ function saveTxEdit(id){
 function removeTransaction(id){
   const idx = transactions.findIndex(t => t.id === id);
   if (idx === -1) return;
+  const tx = transactions[idx];
+  ignoredSignatures.add(txSignature(tx.date, tx.description, tx.amount));
+  saveIgnoredSignatures();
   transactions.splice(idx, 1);
   saveState();
   render();
-  showToast('Transaction removed');
+  showToast('Transaction removed — it won\'t come back on future bank syncs');
 }
 
 function fmtMoney(n){
@@ -2667,7 +2685,8 @@ function exportBudget(){
     learnedRules,
     expenseCategories: EXPENSE_CATEGORIES,
     incomeCategories: INCOME_CATEGORIES,
-    categoryLimits: CATEGORY_LIMITS
+    categoryLimits: CATEGORY_LIMITS,
+    ignoredSignatures: [...ignoredSignatures]
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], {type: 'application/json'});
   const url = URL.createObjectURL(blob);
@@ -2706,6 +2725,7 @@ function importBudget(file){
     if (Array.isArray(data.expenseCategories)) EXPENSE_CATEGORIES = data.expenseCategories;
     if (Array.isArray(data.incomeCategories)) INCOME_CATEGORIES = data.incomeCategories;
     if (data.categoryLimits && typeof data.categoryLimits === 'object') CATEGORY_LIMITS = data.categoryLimits;
+    if (Array.isArray(data.ignoredSignatures)) { ignoredSignatures = new Set(data.ignoredSignatures); saveIgnoredSignatures(); }
     categoryFilter = null;
 
     saveState();
