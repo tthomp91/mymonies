@@ -35,7 +35,11 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,B
 .grouphead{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;}
 .grouphead .gname{font-weight:800;font-size:16px;}
 .dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex-shrink:0;}
-.gtotals{display:flex;gap:34px;font-size:13px;color:var(--sub);padding:0 16px 6px;font-weight:700;justify-content:flex-end;}
+.gtotals{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--sub);padding:0 16px 6px;font-weight:700;}
+.gtotals .gt-fill{flex:1;}
+.gtotals .gt-label{white-space:nowrap;}
+.gtotals .gt-val{width:96px;flex-shrink:0;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;}
+.gtotals .gt-spacer{visibility:hidden;}
 .items{border-top:1px solid var(--line);}
 .item{display:flex;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);gap:8px;background:var(--card);}
 .item:last-child{border-bottom:none;}
@@ -591,7 +595,14 @@ function renderLeft(){
     const card=document.createElement('div'); card.className='card';
     card.innerHTML=`
       <div class="grouphead"><div class="gname">${g.name}</div></div>
-      <div class="gtotals"><span>Planned ${fmt(planned)}</span>${g.type==='expense'?`<span>Spent ${fmt(spentTotal)}</span>`:''}<span>${g.type==='income'?'Received':'Remaining'} ${fmt(secondCol)}</span></div>
+      <div class="gtotals">
+        <span class="handle gt-spacer">&#8942;&#8942;</span>${g.type==='expense'?`<span class="dot gt-spacer"></span>`:''}
+        <span class="gt-fill"></span>
+        <span class="gt-label">Planned</span><span class="gt-val">${fmt(planned)}</span>
+        ${g.type==='expense'?`<span class="gt-label">Spent</span><span class="gt-val">${fmt(spentTotal)}</span>`:''}
+        <span class="gt-label">${g.type==='income'?'Received':'Remaining'}</span><span class="gt-val">${fmt(secondCol)}</span>
+        <button class="delx gt-spacer" tabindex="-1">&times;</button>
+      </div>
       <div class="items" data-group="${g.type}">
         ${g.list.map(cat=>{
           const plannedAmt=getPlanned(ym,cat);
