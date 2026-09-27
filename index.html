@@ -158,6 +158,7 @@ function saveCategories(){
   localStorage.setItem('ledger_expense_categories', JSON.stringify(EXPENSE_CATEGORIES));
   localStorage.setItem('ledger_income_categories', JSON.stringify(INCOME_CATEGORIES));
   localStorage.setItem('ledger_limits', JSON.stringify(CATEGORY_LIMITS));
+  if (typeof queueCloudSync === 'function') queueCloudSync();
 }
 const PALETTE = [
   "#5B8C5A","#D9A441","#4A7A96","#B5533C","#8B6BAA","#4A9A8C","#1D3557","#C46A8F",
@@ -197,6 +198,7 @@ let learnedRules = JSON.parse(localStorage.getItem('ledger_rules') || '{}');
 function saveLedger(){
   localStorage.setItem('ledger_transactions', JSON.stringify(transactions));
   localStorage.setItem('ledger_rules', JSON.stringify(learnedRules));
+  if (typeof queueCloudSync === 'function') queueCloudSync();
   render();
 }
 const NOISE_WORDS = /\b(pos|purchase|debit|credit|payment|recurring|autopay|auto pay|ref|reference|check|card|xx+\d*|transaction|txn|online|web|the)\b/g;
@@ -414,11 +416,11 @@ function handleFiles(files){
 }
 /* ---------- Bank sync via Cloudflare Worker (ported) ---------- */
 const BANK_SYNC_WORKER_URL = 'https://mymonies-sync.tthomp91.workers.dev';
-function getBankSyncPassword(forcePrompt){
-  let pw = localStorage.getItem('bankSyncPassword');
+function getAppPassword(forcePrompt){
+  let pw = localStorage.getItem('appPassword');
   if (!pw || forcePrompt){
-    pw = window.prompt('Enter your bank sync password (set this when you created the Cloudflare Worker):');
-    if (pw) localStorage.setItem('bankSyncPassword', pw);
+    pw = window.prompt('Enter your app password (set this when you created the Cloudflare Worker):');
+    if (pw) localStorage.setItem('appPassword', pw);
   }
   return pw;
 }
@@ -437,16 +439,16 @@ function updateSyncBankLastLabel(){
 }
 async function syncBankTransactions(retryOnAuthFail){
   const btn = document.getElementById('syncBankBtn');
-  const password = getBankSyncPassword(false);
+  const password = getAppPassword(false);
   if (!password) return;
   if (btn){ btn.disabled = true; btn.style.opacity = '0.6'; }
   try {
     const res = await fetch(BANK_SYNC_WORKER_URL, { headers: { 'X-App-Password': password } });
     if (res.status === 401){
-      localStorage.removeItem('bankSyncPassword');
+      localStorage.removeItem('appPassword');
       if (!retryOnAuthFail){
         showToast("That password didn't work — try again");
-        const retryPw = getBankSyncPassword(true);
+        const retryPw = getAppPassword(true);
         if (retryPw) return syncBankTransactions(true);
       } else { showToast('Bank sync password incorrect'); }
       return;
@@ -466,7 +468,7 @@ async function syncBankTransactions(retryOnAuthFail){
   }
 }
 let ignoredSignatures = new Set(JSON.parse(localStorage.getItem('ledger_ignored_sigs') || '[]'));
-function saveIgnoredSignatures(){ localStorage.setItem('ledger_ignored_sigs', JSON.stringify([...ignoredSignatures])); }
+function saveIgnoredSignatures(){ localStorage.setItem('ledger_ignored_sigs', JSON.stringify([...ignoredSignatures])); if (typeof queueCloudSync === 'function') queueCloudSync(); }
 function ingestTransactions(triples, fileName){
   const existingSigs = new Set(transactions.map(t => txSignature(t.date, t.description, t.amount)));
   let addedCount = 0, dupCount = 0, ignoredCount = 0;
@@ -509,7 +511,7 @@ function showToast(message){
 
 /* ===================== Monthly planned amounts (zero-based rollover) ===================== */
 let monthlyPlanned = JSON.parse(localStorage.getItem('ledger_monthly_planned') || '{}');
-function saveMonthlyPlanned(){ localStorage.setItem('ledger_monthly_planned', JSON.stringify(monthlyPlanned)); }
+function saveMonthlyPlanned(){ localStorage.setItem('ledger_monthly_planned', JSON.stringify(monthlyPlanned)); if (typeof queueCloudSync === 'function') queueCloudSync(); }
 function getPlanned(ym, cat){
   if (monthlyPlanned[ym] && monthlyPlanned[ym][cat] != null) return monthlyPlanned[ym][cat];
   const priorYms = Object.keys(monthlyPlanned).filter(k => k < ym).sort();
@@ -526,6 +528,90 @@ function setPlanned(ym, cat, val){
 function ymOf(date){ return (date || '').slice(0,7); }
 function spentFor(ym, cat){ return transactions.filter(t => ymOf(t.date)===ym && t.category===cat && t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0); }
 function receivedFor(ym, cat){ return transactions.filter(t => ymOf(t.date)===ym && t.category===cat && t.amount>0).reduce((s,t)=>s+t.amount,0); }
+
+/* ===================== Cross-device cloud sync (via the same Worker) ===================== */
+let cloudSyncTimer = null;
+let lastCloudPushedJSON = null;
+let suppressCloudSync = false;
+function collectLedgerState(){
+  return {
+    expenseCategories: EXPENSE_CATEGORIES,
+    incomeCategories: INCOME_CATEGORIES,
+    limits: CATEGORY_LIMITS,
+    transactions,
+    rules: learnedRules,
+    ignoredSigs: [...ignoredSignatures],
+    monthlyPlanned,
+    savedAt: Date.now()
+  };
+}
+function applyLedgerState(state){
+  if (!state) return;
+  suppressCloudSync = true;
+  EXPENSE_CATEGORIES = state.expenseCategories && state.expenseCategories.length ? state.expenseCategories : [...DEFAULT_EXPENSE_CATEGORIES];
+  INCOME_CATEGORIES = state.incomeCategories && state.incomeCategories.length ? state.incomeCategories : [...DEFAULT_INCOME_CATEGORIES];
+  CATEGORY_LIMITS = state.limits || {};
+  transactions = state.transactions || [];
+  learnedRules = state.rules || {};
+  ignoredSignatures = new Set(state.ignoredSigs || []);
+  monthlyPlanned = state.monthlyPlanned || {};
+  saveCategories(); saveMonthlyPlanned();
+  localStorage.setItem('ledger_transactions', JSON.stringify(transactions));
+  localStorage.setItem('ledger_rules', JSON.stringify(learnedRules));
+  saveIgnoredSignatures();
+  suppressCloudSync = false;
+}
+function queueCloudSync(){
+  if (suppressCloudSync) return;
+  clearTimeout(cloudSyncTimer);
+  cloudSyncTimer = setTimeout(pushLedgerToCloud, 1200);
+}
+async function pushLedgerToCloud(){
+  const pw = getAppPassword(false);
+  if (!pw) return;
+  const body = JSON.stringify(collectLedgerState());
+  if (body === lastCloudPushedJSON) return;
+  try{
+    const res = await fetch(BANK_SYNC_WORKER_URL + '/ledger', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-App-Password': pw },
+      body
+    });
+    if (res.ok) lastCloudPushedJSON = body;
+  } catch(e){ /* offline - next change will retry */ }
+}
+async function pullLedgerFromCloud(pw){
+  try{
+    const res = await fetch(BANK_SYNC_WORKER_URL + '/ledger', { headers: { 'X-App-Password': pw } });
+    if (res.status === 401) return { ok:false, unauthorized:true };
+    if (!res.ok) return { ok:false };
+    const data = await res.json().catch(() => null);
+    return { ok:true, data };
+  } catch(e){ return { ok:false, offline:true }; }
+}
+async function bootstrapSync(){
+  let pw = localStorage.getItem('appPassword');
+  if (!pw){
+    pw = window.prompt('Set an app password (keeps this private and syncs your devices):');
+    if (pw) localStorage.setItem('appPassword', pw);
+  }
+  if (pw){
+    let result = await pullLedgerFromCloud(pw);
+    if (result.unauthorized){
+      localStorage.removeItem('appPassword');
+      pw = window.prompt("That password didn't work. Try again:");
+      if (pw){ localStorage.setItem('appPassword', pw); result = await pullLedgerFromCloud(pw); }
+    }
+    if (result && result.ok && result.data && Object.keys(result.data).length){
+      applyLedgerState(result.data);
+      lastCloudPushedJSON = JSON.stringify(result.data);
+    } else if (result && result.ok){
+      // Nothing saved in the cloud yet - push what's on this device as the starting point.
+      pushLedgerToCloud();
+    }
+  }
+  render();
+}
 
 /* ===================== App shell (view) ===================== */
 let currentMonth = localStorage.getItem('ledger_view_month') || monthKey(new Date());
@@ -795,7 +881,7 @@ document.addEventListener('change',e=>{
     }
   }
 });
-render();
+bootstrapSync();
 </script>
 </body>
 </html>
