@@ -34,6 +34,9 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,B
 .card{background:var(--card);border-radius:10px;box-shadow:0 1px 2px rgba(20,30,50,.06);margin-bottom:16px;overflow:hidden;}
 .grouphead{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;}
 .grouphead .gname{font-weight:800;font-size:16px;}
+.uncatbadge{border:1px solid #d3dce6;background:#f4f6f9;color:var(--sub);font-size:12px;font-weight:700;padding:5px 10px;border-radius:20px;cursor:pointer;}
+.uncatbadge:hover{background:#eaeff5;}
+.uncatbadge.active{background:var(--blue);border-color:var(--blue);color:#fff;}
 .dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex-shrink:0;}
 .gheader{display:flex;align-items:center;gap:8px;font-size:10.5px;color:var(--sub);padding:6px 16px 2px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;}
 .gtotals{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--sub);padding:0 16px 6px;font-weight:700;}
@@ -41,7 +44,11 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,B
 .gt-val{width:96px;flex-shrink:0;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;}
 .gt-spacer{visibility:hidden;}
 .items{border-top:1px solid var(--line);}
-.item{display:flex;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);gap:8px;background:var(--card);}
+.item{display:flex;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);gap:8px;background:var(--card);cursor:default;}
+.item[data-type="expense"]{cursor:pointer;}
+.item[data-type="expense"]:hover{background:#f6f9fd;}
+.item.selected{background:#e8f0fd;}
+.item.selected:hover{background:#e8f0fd;}
 .item:last-child{border-bottom:none;}
 .item.dragging{opacity:.4;}
 .item.dragover{border-top:2px solid var(--blue);}
@@ -80,6 +87,10 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .legend .lpct{color:var(--sub);width:44px;text-align:right;}
 .sumtotals{display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid var(--line);margin-top:6px;font-size:13px;font-weight:800;}
 .txtools{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;}
+.filterbar{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#e8f0fd;border:1px solid #cfe0f7;border-radius:8px;padding:9px 12px;margin-bottom:12px;font-size:13px;font-weight:600;color:var(--blue-dark);}
+.filterbar b{font-weight:800;}
+.filterbar .clearfilter{background:none;border:none;color:var(--blue-dark);font-weight:700;cursor:pointer;font-size:12.5px;white-space:nowrap;}
+.filterbar .clearfilter:hover{text-decoration:underline;}
 .txtools button{font-size:12.5px;font-weight:700;border:1px solid #cfd8e3;background:#fff;color:var(--blue-dark);padding:8px 12px;border-radius:8px;cursor:pointer;}
 .txtools button:hover{background:#f2f6fb;}
 .txtools .synclabel{font-weight:400;color:var(--sub);}
@@ -519,6 +530,17 @@ function receivedFor(ym, cat){ return transactions.filter(t => ymOf(t.date)===ym
 /* ===================== App shell (view) ===================== */
 let currentMonth = localStorage.getItem('ledger_view_month') || monthKey(new Date());
 let activeTab='summary', activeMetric='planned';
+let filterCategory=null;
+function toggleCategoryFilter(cat){
+  if(filterCategory===cat){ filterCategory=null; } else { filterCategory=cat; activeTab='transactions'; }
+  document.querySelectorAll('.item[data-type="expense"]').forEach(el=>{
+    el.classList.toggle('selected', el.dataset.cat===filterCategory);
+  });
+  document.querySelectorAll('.uncatbadge').forEach(el=>{
+    el.classList.toggle('active', filterCategory==='Uncategorized');
+  });
+  renderTabs();
+}
 let dragCtx=null;
 function monthKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
 function monthLabel(mk){const [y,m]=mk.split('-').map(Number);return new Date(y,m-1,1).toLocaleString('en-US',{month:'long',year:'numeric'});}
@@ -588,13 +610,14 @@ function renderBanner(){
 }
 function renderLeft(){
   const ym=currentMonth; const el=document.getElementById('leftCol'); el.innerHTML='';
+  const uncatCount=transactions.filter(tx=>ymOf(tx.date)===ym && tx.category==='Uncategorized').length;
   [{name:'Income',type:'income',list:INCOME_CATEGORIES},{name:'Expenses',type:'expense',list:EXPENSE_CATEGORIES}].forEach(g=>{
     const planned=g.list.reduce((s,c)=>s+getPlanned(ym,c),0);
     const spentTotal=g.type==='expense'?g.list.reduce((s,c)=>s+spentFor(ym,c),0):0;
     const secondCol=g.type==='income'? g.list.reduce((s,c)=>s+receivedFor(ym,c),0) : g.list.reduce((s,c)=>s+(getPlanned(ym,c)-spentFor(ym,c)),0);
     const card=document.createElement('div'); card.className='card';
     card.innerHTML=`
-      <div class="grouphead"><div class="gname">${g.name}</div></div>
+      <div class="grouphead"><div class="gname">${g.name}</div>${g.type==='expense'?`<button class="uncatbadge ${filterCategory==='Uncategorized'?'active':''}" data-uncat>${uncatCount} Uncategorized</button>`:''}</div>
       <div class="gheader">
         <span class="handle gt-spacer">&#8942;&#8942;</span>${g.type==='expense'?`<span class="dot gt-spacer"></span>`:''}
         <span class="gt-fill"></span>
@@ -618,7 +641,7 @@ function renderLeft(){
           const secondVal=g.type==='income'?receivedFor(ym,cat):(plannedAmt-spentFor(ym,cat));
           const negCls=(g.type!=='income'&&secondVal<0)?'neg':'';
           const dot=g.type==='expense'?`<span class="dot" style="background:${colorForCategory(cat)}"></span>`:'';
-          return `<div class="item" draggable="true" data-cat="${escapeHtml(cat)}" data-type="${g.type}">
+          return `<div class="item ${g.type==='expense'&&filterCategory===cat?'selected':''}" draggable="true" data-cat="${escapeHtml(cat)}" data-type="${g.type}">
             <span class="handle">&#8942;&#8942;</span>${dot}
             <input class="iname" value="${escapeHtml(cat)}" data-name="${escapeHtml(cat)}" data-type="${g.type}">
             <input class="iplanned" type="text" inputmode="decimal" value="${fmt(plannedAmt)}" data-planned="${escapeHtml(cat)}">
@@ -679,9 +702,10 @@ function renderSummary(p){
 function renderTransactions(p){
   const ym=currentMonth;
   const allCats=[...EXPENSE_CATEGORIES,...INCOME_CATEGORIES,'Uncategorized'];
-  const txs=transactions.filter(tx=>ymOf(tx.date)===ym).sort((a,b)=>b.date.localeCompare(a.date));
+  const txs=transactions.filter(tx=>ymOf(tx.date)===ym && (!filterCategory||tx.category===filterCategory)).sort((a,b)=>b.date.localeCompare(a.date));
   updateSyncBankLastLabelSoon();
   p.innerHTML=`
+    ${filterCategory?`<div class="filterbar">Showing <b>${escapeHtml(filterCategory)}</b> only <button class="clearfilter" data-clearfilter>&times; Clear filter</button></div>`:''}
     <div class="txtools">
       <button id="uploadCsvBtn">&#8593; Upload CSV</button>
       <button id="syncBankBtn">&#127974; Sync bank<span class="synclabel" id="syncBankLast"></span></button>
@@ -700,7 +724,7 @@ function renderTransactions(p){
         return `<li><span class="tdate">${tx.date.slice(5)}</span><span class="tname"><div>${escapeHtml(tx.description)}</div></span>
           <select class="tcat" data-txcat="${tx.id}">${allCats.map(c=>`<option value="${escapeHtml(c)}" ${c===tx.category?'selected':''}>${escapeHtml(c)}</option>`).join('')}</select>
           <span class="tamt ${isIncome?'pos':''}">${fmt(tx.amount)}</span><button class="delx" data-deltx="${tx.id}">&times;</button></li>`;
-      }).join('')||'<div class="empty">No transactions this month yet.</div>'}
+      }).join('')||`<div class="empty">${filterCategory?`No transactions for ${escapeHtml(filterCategory)} this month.`:'No transactions this month yet.'}</div>`}
     </ul>`;
   fillTxCatOptions();
   document.getElementById('txType').addEventListener('change',fillTxCatOptions);
@@ -741,6 +765,17 @@ document.addEventListener('click',e=>{
     saveLedger();
   }
   if(t.dataset.deltx){ removeTransaction(t.dataset.deltx); }
+  if(t.dataset.clearfilter!==undefined){
+    filterCategory=null;
+    document.querySelectorAll('.item[data-type="expense"]').forEach(el=>el.classList.remove('selected'));
+    document.querySelectorAll('.uncatbadge').forEach(el=>el.classList.remove('active'));
+    renderTabs();
+  }
+  if(t.dataset.uncat!==undefined){ toggleCategoryFilter('Uncategorized'); }
+  const item=t.closest('.item');
+  if(item && item.dataset.type==='expense' && !t.classList.contains('iplanned') && !t.classList.contains('ispent') && !t.classList.contains('iremain') && !t.classList.contains('delx') && !t.classList.contains('handle')){
+    toggleCategoryFilter(item.dataset.cat);
+  }
 });
 document.addEventListener('focus',e=>{
   if(e.target.classList && e.target.classList.contains('iplanned')) e.target.select();
