@@ -719,6 +719,9 @@ document.addEventListener('click',e=>{
   }
   if(t.dataset.deltx){ removeTransaction(t.dataset.deltx); }
 });
+document.addEventListener('focus',e=>{
+  if(e.target.classList && e.target.classList.contains('iplanned')) e.target.select();
+},true);
 document.addEventListener('change',e=>{
   const t=e.target;
   if(t.dataset.name){ renameCategory(t.dataset.type,t.dataset.name,t.value); }
