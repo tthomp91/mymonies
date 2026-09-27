@@ -20,9 +20,14 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,B
 .iconbtn{width:34px;height:34px;border-radius:8px;border:1px solid #cfd8e3;background:#fff;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;color:var(--blue-dark);}
 .iconbtn:hover{background:#f2f6fb;}
 .todaybtn{border:1px solid #cfd8e3;background:#fff;border-radius:8px;padding:7px 14px;font-weight:600;color:var(--blue-dark);cursor:pointer;}
-.banner{background:var(--card);border-radius:10px;padding:14px;text-align:center;font-weight:700;font-size:15px;margin-bottom:18px;box-shadow:0 1px 2px rgba(20,30,50,.05);}
-.banner.zero{color:var(--green);}
-.banner.over{color:#c0392b;}
+.banner{background:var(--card);border-radius:10px;padding:14px 18px;margin-bottom:18px;box-shadow:0 1px 2px rgba(20,30,50,.05);display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px 22px;}
+.banner .stat{font-size:13px;font-weight:700;color:var(--sub);white-space:nowrap;}
+.banner .stat b{color:var(--text);font-size:15px;margin-left:5px;}
+.banner .sep{width:1px;height:18px;background:var(--line);}
+.banner .msg{font-weight:700;font-size:15px;}
+.banner .msg.zero{color:var(--green);}
+.banner .msg.over{color:#c0392b;}
+@media (max-width:520px){.banner .sep{display:none;}}
 .grid{display:grid;grid-template-columns:1fr 320px;gap:16px;align-items:start;}
 .grid>div:last-child{position:sticky;top:16px;}
 @media (max-width:620px){.grid{grid-template-columns:1fr;}.grid>div:last-child{position:static;}}
@@ -41,6 +46,8 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,B
 .iname{flex:1;background:transparent;border:none;font-size:14px;color:var(--text);font-weight:500;}
 .iname:focus{outline:1px solid var(--blue);border-radius:4px;}
 .iplanned,.iremain{width:100px;text-align:right;border:none;background:transparent;font-size:14px;font-weight:600;}
+input[type=number]{-moz-appearance:textfield;}
+input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
 .iplanned{color:var(--blue);}
 .iremain{color:var(--text);pointer-events:none;}
 .iremain.neg{color:#c0392b;}
@@ -567,9 +574,12 @@ function render(){
 }
 function renderBanner(){
   const t=totals();const b=document.getElementById('banner');
-  if(Math.abs(t.leftToBudget)<0.005){b.className='banner zero';b.innerHTML='&#10003; It\u2019s a zero-based budget!';}
-  else if(t.leftToBudget<0){b.className='banner over';b.textContent=fmt(Math.abs(t.leftToBudget))+' over budget \u2014 reduce a category';}
-  else{b.className='banner';b.textContent=fmt(t.leftToBudget)+' left to budget';}
+  let msgCls='msg',msgText;
+  if(Math.abs(t.leftToBudget)<0.005){msgCls+=' zero';msgText='&#10003; It\u2019s a zero-based budget!';}
+  else if(t.leftToBudget<0){msgCls+=' over';msgText=fmt(Math.abs(t.leftToBudget))+' over budget \u2014 reduce a category';}
+  else{msgText=fmt(t.leftToBudget)+' left to budget';}
+  b.className='banner';
+  b.innerHTML=`<span class="stat">Income<b>${fmt(t.incomePlanned)}</b></span><span class="sep"></span><span class="stat">Expenses<b>${fmt(t.expPlanned)}</b></span><span class="sep"></span><span class="${msgCls}">${msgText}</span>`;
 }
 function renderLeft(){
   const ym=currentMonth; const el=document.getElementById('leftCol'); el.innerHTML='';
