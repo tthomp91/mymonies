@@ -113,6 +113,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 #toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);background:#1c2733;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s, transform .2s;z-index:50;}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 </style>
+<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -437,6 +438,39 @@ function updateSyncBankLastLabel(){
   else label = Math.round(mins/60/24) + 'd ago';
   el.textContent = ' · ' + label;
 }
+async function connectBank(resumeOAuth){
+  const pw = getAppPassword(false);
+  if (!pw) return;
+  try {
+    let linkToken = resumeOAuth ? localStorage.getItem('plaidLinkToken') : null;
+    if (!linkToken){
+      const res = await fetch(BANK_SYNC_WORKER_URL + '/plaid/link-token', { method: 'POST', headers: { 'X-App-Password': pw } });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data || !data.link_token){ showToast('Could not start bank connect: ' + ((data && data.error) || res.status)); return; }
+      linkToken = data.link_token;
+      localStorage.setItem('plaidLinkToken', linkToken);
+    }
+    const cfg = {
+      token: linkToken,
+      onSuccess: async (publicToken) => {
+        localStorage.removeItem('plaidLinkToken');
+        history.replaceState(null, '', location.pathname);
+        const res = await fetch(BANK_SYNC_WORKER_URL + '/plaid/exchange', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-App-Password': pw },
+          body: JSON.stringify({ public_token: publicToken })
+        });
+        showToast(res.ok ? 'Bank connected. Give it a minute, then tap Sync bank' : 'Connected, but saving it failed. Try again');
+      },
+      onExit: () => { history.replaceState(null, '', location.pathname); }
+    };
+    if (resumeOAuth) cfg.receivedRedirectUri = location.href;
+    Plaid.create(cfg).open();
+  } catch (err){
+    showToast("Couldn't reach the bank sync service");
+  }
+}
+window.addEventListener('load', () => { if (location.search.includes('oauth_state_id')) connectBank(true); });
 async function syncBankTransactions(retryOnAuthFail){
   const btn = document.getElementById('syncBankBtn');
   const password = getAppPassword(false);
@@ -794,6 +828,7 @@ function renderTransactions(p){
     ${filterCategory?`<div class="filterbar">Showing <b>${escapeHtml(filterCategory)}</b> only <button class="clearfilter" data-clearfilter>&times; Clear filter</button></div>`:''}
     <div class="txtools">
       <button id="uploadCsvBtn">&#8593; Upload CSV</button>
+      <button id="connectBankBtn">&#128279; Connect bank</button>
       <button id="syncBankBtn">&#127974; Sync bank<span class="synclabel" id="syncBankLast"></span></button>
     </div>
     <div class="txform">
@@ -839,6 +874,7 @@ document.addEventListener('click',e=>{
   if(t.dataset.delcat){ removeCategory(t.dataset.type,t.dataset.delcat); }
   if(t.id==='uploadCsvBtn'){ document.getElementById('fileInput').click(); }
   if(t.id==='syncBankBtn'){ syncBankTransactions(false); }
+  if(t.id==='connectBankBtn'){ connectBank(false); }
   if(t.id==='addTxBtn'){
     const date=document.getElementById('txDate').value;
     const desc=document.getElementById('txDesc').value.trim();
