@@ -89,6 +89,10 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .txtools{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;}
 .filterbar{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#e8f0fd;border:1px solid #cfe0f7;border-radius:8px;padding:9px 12px;margin-bottom:12px;font-size:13px;font-weight:600;color:var(--blue-dark);}
 .filterbar b{font-weight:800;}
+.removedpanel{background:#fff8e6;border:1px solid #f0dfae;border-radius:8px;padding:10px 12px;margin-bottom:12px;max-height:280px;overflow:auto;}
+.removedhead{font-size:13px;font-weight:800;color:#7a5a00;margin-bottom:6px;}
+.restorebtn{font-size:12px;font-weight:700;border:1px solid #cfd8e3;background:#fff;color:var(--blue-dark);padding:4px 10px;border-radius:6px;cursor:pointer;flex-shrink:0;}
+.restorebtn:hover{background:#f2f6fb;}
 .filterbar .clearfilter{background:none;border:none;color:var(--blue-dark);font-weight:700;cursor:pointer;font-size:12.5px;white-space:nowrap;}
 .filterbar .clearfilter:hover{text-decoration:underline;}
 .txtools button{font-size:12.5px;font-weight:700;border:1px solid #cfd8e3;background:#fff;color:var(--blue-dark);padding:8px 12px;border-radius:8px;cursor:pointer;}
@@ -534,6 +538,30 @@ function removeTransaction(id){
   saveLedger();
   showToast("Transaction removed — won't come back on future syncs");
 }
+let showRemoved = false;
+function parseRemovedSig(sig){
+  const a = sig.indexOf('|'), b = sig.indexOf('|', a+1);
+  if (a < 0 || b < 0) return null;
+  return { sig, date: sig.slice(0,a), amount: Number(sig.slice(a+1,b)) / 100, description: sig.slice(b+1) };
+}
+function restoreRemovedTx(sig){
+  const r = parseRemovedSig(sig);
+  if (!r || !ignoredSignatures.has(sig)) return;
+  ignoredSignatures.delete(sig);
+  saveIgnoredSignatures();
+  const desc = titleCaseMerchant(r.description);
+  const already = transactions.some(t => txSignature(t.date, t.description, t.amount) === sig);
+  if (!already){
+    transactions.push({ id: 'tx_' + Date.now() + '_' + Math.random().toString(36).slice(2,7), date: r.date, description: desc, amount: r.amount, category: categorize(desc) });
+  }
+  showToast('Restored: ' + desc);
+  saveLedger();
+}
+function removedPanelHtml(){
+  const rows = [...ignoredSignatures].map(parseRemovedSig).filter(Boolean).sort((a,b) => b.date.localeCompare(a.date));
+  const body = rows.map(r => `<li><span class="tdate">${escapeHtml(r.date)}</span><span class="tname"><div>${escapeHtml(titleCaseMerchant(r.description))}</div></span><span class="tamt ${r.amount>=0?'pos':''}">${fmt(r.amount)}</span><button class="restorebtn" data-restoresig="${escapeHtml(r.sig)}">Restore</button></li>`).join('');
+  return `<div class="removedpanel"><div class="removedhead">Removed transactions (${rows.length})</div><ul class="txlist">${body || '<div class="empty">Nothing removed.</div>'}</ul></div>`;
+}
 let toastTimer = null;
 function showToast(message){
   const el = document.getElementById('toast');
@@ -829,8 +857,10 @@ function renderTransactions(p){
     <div class="txtools">
       <button id="uploadCsvBtn">&#8593; Upload CSV</button>
       <button id="connectBankBtn">&#128279; Connect bank</button>
+      <button id="restoreRemovedBtn">&#8634; Removed (${ignoredSignatures.size})</button>
       <button id="syncBankBtn">&#127974; Sync bank<span class="synclabel" id="syncBankLast"></span></button>
     </div>
+    ${showRemoved ? removedPanelHtml() : ''}
     <div class="txform">
       <input type="date" id="txDate" value="${new Date().toISOString().slice(0,10)}">
       <input type="text" id="txDesc" placeholder="Description">
@@ -875,6 +905,8 @@ document.addEventListener('click',e=>{
   if(t.id==='uploadCsvBtn'){ document.getElementById('fileInput').click(); }
   if(t.id==='syncBankBtn'){ syncBankTransactions(false); }
   if(t.id==='connectBankBtn'){ connectBank(false); }
+  if(t.id==='restoreRemovedBtn'){ showRemoved = !showRemoved; render(); }
+  if(t.dataset.restoresig){ restoreRemovedTx(t.dataset.restoresig); }
   if(t.id==='addTxBtn'){
     const date=document.getElementById('txDate').value;
     const desc=document.getElementById('txDesc').value.trim();
