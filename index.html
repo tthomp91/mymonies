@@ -114,6 +114,21 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .txlist .tamt{font-weight:700;width:74px;text-align:right;flex-shrink:0;}
 .txlist .tamt.pos{color:var(--green);}
 .empty{color:var(--sub);text-align:center;padding:24px 0;font-size:13px;}
+.bankpanel{background:#f6f9fd;border:1px solid #cfe0f7;border-radius:8px;padding:10px 12px;margin-bottom:12px;max-height:380px;overflow:auto;}
+.bankhead{font-size:13px;font-weight:800;color:var(--blue-dark);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:8px;}
+.bankitem{background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:10px;}
+.bankitem-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;}
+.bankname{font-weight:800;font-size:14px;}
+.bankbtns{display:flex;gap:6px;flex-shrink:0;}
+.bankbtns button{font-size:12px;font-weight:700;border:1px solid #cfd8e3;background:#fff;color:var(--blue-dark);padding:4px 10px;border-radius:6px;cursor:pointer;}
+.bankbtns button:hover{background:#f2f6fb;}
+.bankbtns button.danger{color:#c0392b;border-color:#e8c4bf;}
+.bankbtns button.danger:hover{background:#fdf1ef;}
+.acctrow{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:13px;}
+.acctrow label{display:flex;align-items:center;gap:8px;flex:1;cursor:pointer;min-width:0;}
+.acctrow .aname{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.acctrow .asub{color:var(--sub);font-size:12px;}
+.acctrow.off .aname{color:var(--sub);text-decoration:line-through;}
 #toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);background:#1c2733;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s, transform .2s;z-index:50;}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 </style>
@@ -442,13 +457,15 @@ function updateSyncBankLastLabel(){
   else label = Math.round(mins/60/24) + 'd ago';
   el.textContent = ' · ' + label;
 }
-async function connectBank(resumeOAuth){
+async function connectBank(resumeOAuth, updateItemId){
   const pw = getAppPassword(false);
   if (!pw) return;
   try {
     let linkToken = resumeOAuth ? localStorage.getItem('plaidLinkToken') : null;
     if (!linkToken){
-      const res = await fetch(BANK_SYNC_WORKER_URL + '/plaid/link-token', { method: 'POST', headers: { 'X-App-Password': pw } });
+      const ltOpts = { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-App-Password': pw } };
+      if (updateItemId) ltOpts.body = JSON.stringify({ item_id: updateItemId, update: true });
+      const res = await fetch(BANK_SYNC_WORKER_URL + '/plaid/link-token', ltOpts);
       const data = await res.json().catch(() => null);
       if (!res.ok || !data || !data.link_token){ showToast('Could not start bank connect: ' + ((data && data.error) || res.status)); return; }
       linkToken = data.link_token;
@@ -456,15 +473,24 @@ async function connectBank(resumeOAuth){
     }
     const cfg = {
       token: linkToken,
-      onSuccess: async (publicToken) => {
+      onSuccess: async (publicToken, metadata) => {
         localStorage.removeItem('plaidLinkToken');
         history.replaceState(null, '', location.pathname);
+        if (updateItemId){
+          // Update mode: the item already exists, just refresh the account list
+          showToast('Accounts updated');
+          if (showBanks) loadBanks();
+          return;
+        }
+        const accounts = ((metadata && metadata.accounts) || []).map(a => ({ id: a.id, name: a.name, mask: a.mask, type: a.type, subtype: a.subtype }));
+        const institution = metadata && metadata.institution ? { id: metadata.institution.institution_id, name: metadata.institution.name } : null;
         const res = await fetch(BANK_SYNC_WORKER_URL + '/plaid/exchange', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-App-Password': pw },
-          body: JSON.stringify({ public_token: publicToken })
+          body: JSON.stringify({ public_token: publicToken, institution, accounts })
         });
         showToast(res.ok ? 'Bank connected. Give it a minute, then tap Sync bank' : 'Connected, but saving it failed. Try again');
+        if (res.ok && showBanks) setTimeout(loadBanks, 1500);
       },
       onExit: () => { history.replaceState(null, '', location.pathname); }
     };
@@ -494,7 +520,8 @@ async function syncBankTransactions(retryOnAuthFail){
     const data = await res.json().catch(() => null);
     if (!res.ok){ showToast(data && data.error ? `Bank sync error: ${data.error}` : `Bank sync failed (server said ${res.status})`); return; }
     if (data && data.error){ showToast(`Bank sync error: ${data.error}`); return; }
-    const triples = (data.transactions || []).map(t => [t.date, t.description, t.amount]);
+    const off = new Set(bankItems.flatMap(b => (b.accounts || []).filter(a => a.enabled === false).map(a => a.account_id)));
+    const triples = (data.transactions || []).filter(t => !(t.account_id && off.has(t.account_id))).map(t => [t.date, t.description, t.amount]);
     if (triples.length === 0){ showToast('No transactions returned from your bank'); return; }
     ingestTransactions(triples, 'Bank sync');
     localStorage.setItem('bankSyncLastTime', String(Date.now()));
@@ -537,6 +564,88 @@ function removeTransaction(id){
   transactions.splice(idx, 1);
   saveLedger();
   showToast("Transaction removed — won't come back on future syncs");
+}
+
+/* ===================== Linked banks manager ===================== */
+let showBanks = false;
+let bankItems = [];
+let banksLoading = false;
+let banksError = '';
+async function bankFetch(path, opts){
+  const pw = getAppPassword(false);
+  if (!pw) throw new Error('no password');
+  opts = opts || {};
+  opts.headers = Object.assign({ 'X-App-Password': pw }, opts.headers || {});
+  if (opts.body && !opts.headers['Content-Type']) opts.headers['Content-Type'] = 'application/json';
+  const res = await fetch(BANK_SYNC_WORKER_URL + path, opts);
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error((data && data.error) || ('HTTP ' + res.status));
+  return data;
+}
+async function loadBanks(){
+  banksLoading = true; banksError = ''; renderTabs();
+  try {
+    const data = await bankFetch('/plaid/items');
+    bankItems = (data && data.items) || [];
+  } catch (err){
+    banksError = "Couldn't load linked banks (" + err.message + "). The Worker needs the /plaid/items endpoint.";
+  }
+  banksLoading = false; renderTabs();
+}
+async function setAccountEnabled(itemId, accountId, enabled){
+  const bank = bankItems.find(b => b.item_id === itemId);
+  if (!bank) return;
+  const acct = bank.accounts.find(a => a.account_id === accountId);
+  if (!acct) return;
+  const prev = acct.enabled;
+  acct.enabled = enabled;
+  renderTabs();
+  try {
+    await bankFetch('/plaid/accounts', { method: 'POST', body: JSON.stringify({
+      item_id: itemId,
+      enabled_account_ids: bank.accounts.filter(a => a.enabled !== false).map(a => a.account_id)
+    })});
+    showToast(enabled ? 'Account will sync' : 'Account excluded from sync');
+  } catch (err){
+    acct.enabled = prev; renderTabs();
+    showToast('Could not update account: ' + err.message);
+  }
+}
+async function removeBank(itemId){
+  const bank = bankItems.find(b => b.item_id === itemId);
+  const name = bank ? bank.institution_name : 'this bank';
+  if (!confirm('Remove ' + name + '? Plaid access is revoked and it stops syncing. Transactions already in your ledger are kept.')) return;
+  try {
+    await bankFetch('/plaid/remove', { method: 'POST', body: JSON.stringify({ item_id: itemId }) });
+    bankItems = bankItems.filter(b => b.item_id !== itemId);
+    showToast(name + ' removed');
+    renderTabs();
+  } catch (err){
+    showToast('Could not remove bank: ' + err.message);
+  }
+}
+function banksPanelHtml(){
+  let body;
+  if (banksLoading) body = '<div class="empty">Loading linked banks…</div>';
+  else if (banksError) body = '<div class="empty">' + escapeHtml(banksError) + '</div>';
+  else if (!bankItems.length) body = '<div class="empty">No banks linked yet. Tap Connect bank.</div>';
+  else body = bankItems.map(b => `
+    <div class="bankitem">
+      <div class="bankitem-top">
+        <span class="bankname">${escapeHtml(b.institution_name || 'Bank')}</span>
+        <span class="bankbtns">
+          <button data-addaccts="${escapeHtml(b.item_id)}">Add/change accounts</button>
+          <button class="danger" data-removebank="${escapeHtml(b.item_id)}">Remove</button>
+        </span>
+      </div>
+      ${(b.accounts || []).map(a => `
+        <div class="acctrow ${a.enabled === false ? 'off' : ''}">
+          <label><input type="checkbox" data-acctitem="${escapeHtml(b.item_id)}" data-acct="${escapeHtml(a.account_id)}" ${a.enabled === false ? '' : 'checked'}>
+            <span class="aname">${escapeHtml(a.name || 'Account')}${a.mask ? ' ····' + escapeHtml(a.mask) : ''}</span></label>
+          <span class="asub">${escapeHtml(a.subtype || a.type || '')}</span>
+        </div>`).join('') || '<div class="empty">No accounts found.</div>'}
+    </div>`).join('');
+  return `<div class="bankpanel"><div class="bankhead"><span>Linked banks &amp; accounts</span></div>${body}</div>`;
 }
 let showRemoved = false;
 function parseRemovedSig(sig){
@@ -857,9 +966,11 @@ function renderTransactions(p){
     <div class="txtools">
       <button id="uploadCsvBtn">&#8593; Upload CSV</button>
       <button id="connectBankBtn">&#128279; Connect bank</button>
+      <button id="manageBanksBtn">&#9881; Manage banks</button>
       <button id="restoreRemovedBtn">&#8634; Removed (${ignoredSignatures.size})</button>
       <button id="syncBankBtn">&#127974; Sync bank<span class="synclabel" id="syncBankLast"></span></button>
     </div>
+    ${showBanks ? banksPanelHtml() : ''}
     ${showRemoved ? removedPanelHtml() : ''}
     <div class="txform">
       <input type="date" id="txDate" value="${new Date().toISOString().slice(0,10)}">
@@ -905,6 +1016,9 @@ document.addEventListener('click',e=>{
   if(t.id==='uploadCsvBtn'){ document.getElementById('fileInput').click(); }
   if(t.id==='syncBankBtn'){ syncBankTransactions(false); }
   if(t.id==='connectBankBtn'){ connectBank(false); }
+  if(t.id==='manageBanksBtn'){ showBanks = !showBanks; if(showBanks) loadBanks(); else renderTabs(); }
+  if(t.dataset.removebank){ removeBank(t.dataset.removebank); }
+  if(t.dataset.addaccts){ connectBank(false, t.dataset.addaccts); }
   if(t.id==='restoreRemovedBtn'){ showRemoved = !showRemoved; render(); }
   if(t.dataset.restoresig){ restoreRemovedTx(t.dataset.restoresig); }
   if(t.id==='addTxBtn'){
@@ -936,6 +1050,7 @@ document.addEventListener('focus',e=>{
 },true);
 document.addEventListener('change',e=>{
   const t=e.target;
+  if(t.dataset.acct){ setAccountEnabled(t.dataset.acctitem, t.dataset.acct, t.checked); return; }
   if(t.dataset.name){ renameCategory(t.dataset.type,t.dataset.name,t.value); }
   if(t.dataset.planned){ setPlanned(currentMonth,t.dataset.planned,parseFloat(t.value.replace(/[^0-9.-]/g,''))||0); render(); }
   if(t.dataset.txcat){
