@@ -45,8 +45,8 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,B
 .gt-spacer{visibility:hidden;}
 .items{border-top:1px solid var(--line);}
 .item{display:flex;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);gap:8px;background:var(--card);cursor:default;}
-.item[data-type="expense"]{cursor:pointer;}
-.item[data-type="expense"]:hover{background:#f6f9fd;}
+.item[data-type]{cursor:pointer;}
+.item[data-type]:hover{background:#f6f9fd;}
 .item.selected{background:#e8f0fd;}
 .item.selected:hover{background:#e8f0fd;}
 .item:last-child{border-bottom:none;}
@@ -799,7 +799,7 @@ let activeTab='summary', activeMetric='planned';
 let filterCategory=null;
 function toggleCategoryFilter(cat){
   if(filterCategory===cat){ filterCategory=null; } else { filterCategory=cat; activeTab='transactions'; }
-  document.querySelectorAll('.item[data-type="expense"]').forEach(el=>{
+  document.querySelectorAll('.item').forEach(el=>{
     el.classList.toggle('selected', el.dataset.cat===filterCategory);
   });
   document.querySelectorAll('.uncatbadge').forEach(el=>{
@@ -907,7 +907,7 @@ function renderLeft(){
           const secondVal=g.type==='income'?receivedFor(ym,cat):(plannedAmt-spentFor(ym,cat));
           const negCls=(g.type!=='income'&&secondVal<0)?'neg':'';
           const dot=g.type==='expense'?`<span class="dot" style="background:${colorForCategory(cat)}"></span>`:'';
-          return `<div class="item ${g.type==='expense'&&filterCategory===cat?'selected':''}" draggable="true" data-cat="${escapeHtml(cat)}" data-type="${g.type}">
+          return `<div class="item ${filterCategory===cat?'selected':''}" draggable="true" data-cat="${escapeHtml(cat)}" data-type="${g.type}">
             <span class="handle">&#8942;&#8942;</span>${dot}
             <input class="iname" value="${escapeHtml(cat)}" data-name="${escapeHtml(cat)}" data-type="${g.type}">
             <input class="iplanned" type="text" inputmode="decimal" value="${fmt(plannedAmt)}" data-planned="${escapeHtml(cat)}">
@@ -1044,13 +1044,13 @@ document.addEventListener('click',e=>{
   if(t.dataset.deltx){ removeTransaction(t.dataset.deltx); }
   if(t.dataset.clearfilter!==undefined){
     filterCategory=null;
-    document.querySelectorAll('.item[data-type="expense"]').forEach(el=>el.classList.remove('selected'));
+    document.querySelectorAll('.item').forEach(el=>el.classList.remove('selected'));
     document.querySelectorAll('.uncatbadge').forEach(el=>el.classList.remove('active'));
     renderTabs();
   }
   if(t.dataset.uncat!==undefined){ toggleCategoryFilter('Uncategorized'); }
   const item=t.closest('.item');
-  if(item && item.dataset.type==='expense' && !t.classList.contains('iplanned') && !t.classList.contains('ispent') && !t.classList.contains('iremain') && !t.classList.contains('delx') && !t.classList.contains('handle')){
+  if(item && !t.classList.contains('iplanned') && !t.classList.contains('ispent') && !t.classList.contains('iremain') && !t.classList.contains('delx') && !t.classList.contains('handle')){
     toggleCategoryFilter(item.dataset.cat);
   }
 });
