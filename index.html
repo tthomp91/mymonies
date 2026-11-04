@@ -704,6 +704,7 @@ function receivedFor(ym, cat){ return transactions.filter(t => ymOf(t.date)===ym
 let cloudSyncTimer = null;
 let lastCloudPushedJSON = null;
 let suppressCloudSync = false;
+let cloudReady = false; // only true once we have successfully read the cloud copy, so a failed read can never overwrite it
 function collectLedgerState(){
   return {
     expenseCategories: EXPENSE_CATEGORIES,
@@ -718,6 +719,12 @@ function collectLedgerState(){
 }
 function applyLedgerState(state){
   if (!state) return;
+  try {
+    // Keep a copy of what was on this device before the cloud copy replaces it
+    if (transactions.length || Object.keys(monthlyPlanned).length){
+      localStorage.setItem('ledger_pre_cloud_backup', JSON.stringify(collectLedgerState()));
+    }
+  } catch(e){}
   suppressCloudSync = true;
   EXPENSE_CATEGORIES = state.expenseCategories && state.expenseCategories.length ? state.expenseCategories : [...DEFAULT_EXPENSE_CATEGORIES];
   INCOME_CATEGORIES = state.incomeCategories && state.incomeCategories.length ? state.incomeCategories : [...DEFAULT_INCOME_CATEGORIES];
@@ -738,6 +745,7 @@ function queueCloudSync(){
   cloudSyncTimer = setTimeout(pushLedgerToCloud, 1200);
 }
 async function pushLedgerToCloud(){
+  if (!cloudReady) return;
   const pw = getAppPassword(false);
   if (!pw) return;
   const body = JSON.stringify(collectLedgerState());
@@ -773,6 +781,7 @@ async function bootstrapSync(){
       pw = window.prompt("That password didn't work. Try again:");
       if (pw){ localStorage.setItem('appPassword', pw); result = await pullLedgerFromCloud(pw); }
     }
+    if (result && result.ok) cloudReady = true;
     if (result && result.ok && result.data && Object.keys(result.data).length){
       applyLedgerState(result.data);
       lastCloudPushedJSON = JSON.stringify(result.data);
